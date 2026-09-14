@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f4ef">
+  <title>Авто-планирование — план на неделю</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Авто-планирование">
+        <span class="brand-mark">✳</span>
+        <span>авто-планирование</span>
+      </a>
+      <span class="session-pill"><i></i> личная сессия</span>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">WEEKLY PLANNER <span>01</span></div>
+        <h1>Неделя, которую<br><em>реально прожить.</em></h1>
+        <p class="hero-copy">Опиши планы своими словами — я разложу их по дням, сферам и времени. Ты всё проверишь и только потом отправишь в таблицу.</p>
+        <div class="steps" aria-label="Этапы планирования">
+          <div class="step active"><b>01</b><span>Твой лист</span></div>
+          <div class="step-line"></div>
+          <div class="step"><b>02</b><span>Черновик</span></div>
+          <div class="step-line"></div>
+          <div class="step"><b>03</b><span>Подтверждение</span></div>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <aside class="sidebar">
+          <div class="card profile-card" id="profile-card">
+            <div class="card-kicker">ПОДКЛЮЧЕНИЕ</div>
+            <h2>Куда записывать план?</h2>
+            <p class="muted">Вставь ФИО ровно как оно написано в названии персональной вкладки Google Sheets.</p>
+            <form id="register-form">
+              <label for="display-name">Название листа</label>
+              <div class="input-with-button">
+                <input id="display-name" name="display_name" autocomplete="off" placeholder="Фамилия Имя Отчество" required>
+                <button class="icon-button" type="submit" aria-label="Подключить лист">→</button>
+              </div>
+              <div class="form-message" id="register-message" role="status"></div>
+            </form>
+            <div class="connected-state hidden" id="connected-state">
+              <div class="connected-icon">✓</div>
+              <div>
+                <strong id="connected-name">—</strong>
+                <span>лист подключён</span>
+              </div>
+              <button class="text-button" id="change-profile" type="button">изменить</button>
+            </div>
+          </div>
+
+          <div class="card mini-guide">
+            <div class="card-kicker">КАК ЭТО РАБОТАЕТ</div>
+            <div class="guide-row"><span>01</span><p>Расскажи, чего хочешь достичь</p></div>
+            <div class="guide-row"><span>02</span><p>Проверь и подправь черновик</p></div>
+            <div class="guide-row"><span>03</span><p>Подтверди — и всё появится в Sheets</p></div>
+          </div>
+        </aside>
+
+        <section class="planner-column">
+          <div class="card composer-card" id="composer-card">
+            <div class="composer-head">
+              <div>
+                <div class="card-kicker">ШАГ 01 · ВВОД</div>
+                <h2>Что планируем?</h2>
+              </div>
+              <label class="week-control">
+                <span>НЕДЕЛЯ</span>
+                <select id="week-select" aria-label="Неделя"></select>
+              </label>
+            </div>
+
+            <div class="schedule-strip">
+              <div class="schedule-strip-copy"><span class="sync-icon">↻</span><div><strong>Расписание Skyeng</strong><small id="schedule-status">Проверяю подключение…</small></div></div>
+              <div class="schedule-actions">
+                <button class="small-button hidden" id="connect-skyeng" type="button">подключить</button>
+                <button class="small-button" id="sync-schedule" type="button">обновить</button>
+              </div>
+            </div>
+            <label class="schedule-option" for="include-schedule">
+              <input id="include-schedule" type="checkbox" checked>
+              <span><strong>Учитывать расписание автоматически</strong><small>Названия уроков и их время попадут в план без отдельной просьбы</small></span>
+            </label>
+
+            <div class="question-block">
+              <div class="question-head">
+                <span>Не знаешь, с чего начать?</span>
+                <small>нажми на подсказку</small>
+              </div>
+              <div class="question-grid">
+                <button type="button" class="question-chip" data-insert="Главный результат: "><b>Главный результат</b><span>что должно быть готово?</span></button>
+                <button type="button" class="question-chip" data-insert="Фиксированные дела: "><b>Фиксированные дела</b><span>вебинары, встречи, тренировки</span></button>
+                <button type="button" class="question-chip" data-insert="Ресурс и время: "><b>Ресурс и время</b><span>сколько сил и часов есть?</span></button>
+                <button type="button" class="question-chip" data-insert="Не забыть: "><b>Не забыть</b><span>что переносится дальше?</span></button>
+              </div>
+            </div>
+
+            <textarea id="source-text" rows="7" placeholder="Например: в понедельник разобрать конспект по физике, во вторник решить задачи за час, в среду тренировка... Рассказывай как есть — детали можно добавить позже."></textarea>
+            <div class="composer-foot">
+              <span class="character-count" id="character-count">0 / 8000</span>
+              <button class="primary-button" id="generate-button" type="button" disabled><span>Собрать черновик</span><b>↗</b></button>
+            </div>
+            <div class="form-message" id="plan-message" role="status"></div>
+          </div>
+
+          <div class="card review-card hidden" id="review-card">
+            <div class="review-head">
+              <div>
+                <div class="card-kicker">ШАГ 02 · ПРОВЕРКА</div>
+                <h2>Твой черновик</h2>
+              </div>
+              <span class="draft-status"><i></i> можно редактировать</span>
+            </div>
+
+            <div class="goals-section">
+              <div class="section-title"><span>Цели недели</span><button class="small-button" id="add-goal" type="button">+ добавить</button></div>
+              <div id="goals-list" class="goals-list"></div>
+            </div>
+
+            <div class="tasks-section">
+              <div class="section-title"><span>Задачи по дням</span><button class="small-button" id="add-task" type="button">+ добавить задачу</button></div>
+              <div class="task-list" id="task-list"></div>
+            </div>
+
+            <div class="warnings hidden" id="warnings-box">
+              <div class="warning-title">На что обратить внимание</div>
+              <ul id="warnings-list"></ul>
+            </div>
+
+            <div class="ai-edit">
+              <div class="ai-edit-copy"><span class="spark">✦</span><div><strong>Хочешь поменять смысл?</strong><small>Напиши правку словами, и я обновлю черновик</small></div></div>
+              <div class="ai-edit-row"><input id="correction-text" placeholder="Например: перенеси тренировку на субботу и добавь 90 минут"><button class="secondary-button" id="apply-correction" type="button">Применить</button></div>
+            </div>
+
+            <div class="review-actions">
+              <button class="ghost-button" id="new-plan" type="button">← начать заново</button>
+              <button class="confirm-button" id="confirm-button" type="button"><span>Подтвердить и записать</span><b>✓</b></button>
+            </div>
+            <div class="form-message" id="confirm-message" role="status"></div>
+          </div>
+
+          <div class="success-card hidden" id="success-card">
+            <div class="success-mark">✓</div>
+            <div>
+              <div class="card-kicker">ГОТОВО</div>
+              <h2>План записан.</h2>
+              <p id="success-copy">Он уже ждёт тебя в таблице.</p>
+              <a id="sheet-link" href="#" target="_blank" rel="noreferrer">Открыть Google Sheets ↗</a>
+            </div>
+            <button class="secondary-button" id="another-plan" type="button">Сделать ещё один</button>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <footer><span>авто-планирование</span><span>твоя неделя · твои правила</span></footer>
+  </div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

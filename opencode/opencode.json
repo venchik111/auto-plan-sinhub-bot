@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "planner",
+  "mcp": {},
+  "plugin": [],
+  "permission": {
+    "edit": "deny",
+    "write": "deny",
+    "bash": { "*": "deny" },
+    "webfetch": "deny",
+    "question": "deny",
+    "plan_enter": "deny",
+    "plan_exit": "deny"
+  }
+}

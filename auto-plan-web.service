@@ -1,0 +1,17 @@
+[Unit]
+Description=Auto Plan Web App
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ivan/Projects/Auto_plan_sinhub_bot
+ExecStart=/home/ivan/Projects/Auto_plan_sinhub_bot/.venv/bin/uvicorn app.web:app --host 0.0.0.0 --port 8000
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/ivan/Projects/Auto_plan_sinhub_bot/web.log
+StandardError=append:/home/ivan/Projects/Auto_plan_sinhub_bot/web.log
+
+[Install]
+WantedBy=default.target

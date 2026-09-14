@@ -1,0 +1,17 @@
+[Unit]
+Description=Auto Plan Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ivan/Projects/Auto_plan_sinhub_bot
+ExecStart=/home/ivan/Projects/Auto_plan_sinhub_bot/.venv/bin/python -m app.main
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/ivan/Projects/Auto_plan_sinhub_bot/bot.log
+StandardError=append:/home/ivan/Projects/Auto_plan_sinhub_bot/bot.log
+
+[Install]
+WantedBy=default.target
