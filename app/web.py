@@ -19,7 +19,7 @@ from .llm import LLMError, OpenAICompatibleLLM
 from .models import DAYS, SPHERES, PlanDraft, PlanValidationError
 from .skyeng import SkyengAuthError, SkyengError, SkyengScheduleClient, render_schedule
 from .sheets import SheetsError, SheetsRepository
-from .weeks import is_week_label, local_today, week_label
+from .weeks import is_week_label, local_today, week_label, week_start as get_week_start
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -50,12 +50,14 @@ class RegisterRequest(BaseModel):
 
 class GenerateRequest(BaseModel):
     week_label: str = Field(min_length=5, max_length=30)
+    week_start: date | None = None
     source_text: str = Field(min_length=10, max_length=8000)
     include_schedule: bool = True
 
 
 class UpdateRequest(BaseModel):
     week_label: str = Field(min_length=5, max_length=30)
+    week_start: date | None = None
     draft: dict[str, Any]
     correction: str = Field(min_length=3, max_length=4000)
     include_schedule: bool = True
@@ -68,6 +70,7 @@ class ConfirmRequest(BaseModel):
 
 class ScheduleSyncRequest(BaseModel):
     week_label: str = Field(min_length=5, max_length=30)
+    week_start: date | None = None
 
 
 def _skyeng_storage_path(session_id: str) -> Path:
@@ -137,6 +140,22 @@ def _validate_week(value: str) -> str:
     return value
 
 
+def _validate_week_start(value: str, selected_start: date | None) -> date | None:
+    """Validate the calendar date sent by the week picker.
+
+    The sheet keeps the compact label ``dd.mm-dd.mm`` for compatibility with
+    the existing template, while the ISO start date disambiguates the year
+    when a user selects a week in the calendar.
+    """
+    if selected_start is None:
+        return None
+    if selected_start.weekday() != 0:
+        raise HTTPException(status_code=400, detail="Неделя должна начинаться с понедельника.")
+    if week_label(selected_start) != value:
+        raise HTTPException(status_code=400, detail="Дата начала не совпадает с выбранной неделей.")
+    return selected_start
+
+
 def _has_planning_details(value: str) -> bool:
     details = re.sub(
         r"^(Главный результат|Фиксированные дела|Ресурс и время|Не забыть):?\s*$",
@@ -147,7 +166,9 @@ def _has_planning_details(value: str) -> bool:
     return len(" ".join(details.split())) >= 10
 
 
-def _week_dates(value: str) -> tuple[date, date]:
+def _week_dates(value: str, selected_start: date | None = None) -> tuple[date, date]:
+    if selected_start is not None:
+        return selected_start, selected_start + timedelta(days=6)
     start_text = value.split("-", 1)[0]
     day, month = (int(part) for part in start_text.split("."))
     today = local_today(settings.app_timezone)
@@ -178,10 +199,18 @@ def _cache_is_fresh(cached: dict[str, Any] | None) -> bool:
 
 
 async def _load_schedule(
-    session_id: str, week: str, force: bool = False
+    session_id: str,
+    week: str,
+    force: bool = False,
+    selected_start: date | None = None,
 ) -> dict[str, Any]:
     skyeng = _skyeng_client(session_id)
-    cached = database.get_web_schedule(session_id, week)
+    # The sheet label intentionally has no year (for compatibility with the
+    # template), so use the ISO Monday as the cache key whenever the calendar
+    # supplied an exact week. Otherwise 28.12-03.01 from different years
+    # could overwrite each other.
+    cache_key = selected_start.isoformat() if selected_start is not None else week
+    cached = database.get_web_schedule(session_id, cache_key)
     if not force and _cache_is_fresh(cached):
         return {
             "events": cached.get("events", []),
@@ -198,7 +227,7 @@ async def _load_schedule(
             "error": "Авторизация Skyeng ещё не подключена.",
         }
 
-    start, end = _week_dates(week)
+    start, end = _week_dates(week, selected_start)
     try:
         events = await skyeng.fetch_week(start, end)
     except SkyengAuthError:
@@ -224,7 +253,7 @@ async def _load_schedule(
 
     fetched_at = datetime.now(timezone.utc).isoformat()
     event_payload = [event.to_dict() for event in events]
-    database.save_web_schedule(session_id, week, event_payload, fetched_at)
+    database.save_web_schedule(session_id, cache_key, event_payload, fetched_at)
     return {
         "events": event_payload,
         "fetched_at": fetched_at,
@@ -238,6 +267,7 @@ async def _planning_source(
     week: str,
     user_text: str,
     include_schedule: bool = True,
+    selected_start: date | None = None,
 ) -> tuple[str, dict[str, Any]]:
     skyeng = _skyeng_client(session_id)
     if not include_schedule:
@@ -248,7 +278,7 @@ async def _planning_source(
             "included": False,
         }
     try:
-        schedule = await _load_schedule(session_id, week)
+        schedule = await _load_schedule(session_id, week, selected_start=selected_start)
     except SkyengError as exc:
         # Планирование не должно ломаться из-за временной недоступности
         # расписания: в этом случае LLM продолжит работать только с текстом
@@ -343,6 +373,8 @@ async def bootstrap(request: Request) -> JSONResponse:
             "user": user,
             "current_week": week_label(today),
             "next_week": week_label(today, 1),
+            "current_week_start": get_week_start(today).isoformat(),
+            "next_week_start": get_week_start(today, 1).isoformat(),
             "spheres": list(SPHERES),
             "days": list(DAYS),
         },
@@ -377,11 +409,14 @@ async def register(request: Request, data: RegisterRequest) -> JSONResponse:
 
 
 @app.get("/api/schedule")
-async def get_schedule(request: Request, week: str) -> dict[str, Any]:
+async def get_schedule(
+    request: Request, week: str, week_start: date | None = None
+) -> dict[str, Any]:
     session_id, _ = _require_user(request)
     week = _validate_week(week)
+    week_start = _validate_week_start(week, week_start)
     try:
-        schedule = await _load_schedule(session_id, week)
+        schedule = await _load_schedule(session_id, week, selected_start=week_start)
     except SkyengError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {
@@ -399,8 +434,9 @@ async def sync_schedule(
 ) -> dict[str, Any]:
     session_id, _ = _require_user(request)
     week = _validate_week(data.week_label)
+    week_start = _validate_week_start(week, data.week_start)
     try:
-        schedule = await _load_schedule(session_id, week, force=True)
+        schedule = await _load_schedule(session_id, week, force=True, selected_start=week_start)
     except SkyengError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {
@@ -416,6 +452,7 @@ async def sync_schedule(
 async def generate_plan(request: Request, data: GenerateRequest) -> dict[str, Any]:
     session_id, _ = _require_user(request)
     week = _validate_week(data.week_label)
+    week_start = _validate_week_start(week, data.week_start)
     if not _has_planning_details(data.source_text):
         raise HTTPException(
             status_code=400,
@@ -426,6 +463,7 @@ async def generate_plan(request: Request, data: GenerateRequest) -> dict[str, An
         week,
         data.source_text.strip(),
         data.include_schedule,
+        week_start,
     )
     try:
         draft = await llm.generate_plan(
@@ -445,12 +483,14 @@ async def generate_plan(request: Request, data: GenerateRequest) -> dict[str, An
 async def update_plan(request: Request, data: UpdateRequest) -> dict[str, Any]:
     session_id, _ = _require_user(request)
     week = _validate_week(data.week_label)
+    week_start = _validate_week_start(week, data.week_start)
     current = _draft_from_payload(data.draft, week)
     _, schedule = await _planning_source(
         session_id,
         week,
         data.correction.strip(),
         data.include_schedule,
+        week_start,
     )
     correction = data.correction.strip()
     if schedule.get("events"):

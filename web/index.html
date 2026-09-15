@@ -75,10 +75,15 @@
                 <div class="card-kicker">ШАГ 01 · ВВОД</div>
                 <h2>Что планируем?</h2>
               </div>
-              <label class="week-control">
+              <div class="week-control">
                 <span>НЕДЕЛЯ</span>
-                <select id="week-select" aria-label="Неделя"></select>
-              </label>
+                <div class="week-picker">
+                  <button class="week-arrow" id="previous-week" type="button" aria-label="Предыдущая неделя">←</button>
+                  <input id="week-date" type="date" aria-label="Любой день нужной недели">
+                  <button class="week-arrow" id="next-week" type="button" aria-label="Следующая неделя">→</button>
+                </div>
+                <small class="week-range" id="week-range">—</small>
+              </div>
             </div>
 
             <div class="schedule-strip">

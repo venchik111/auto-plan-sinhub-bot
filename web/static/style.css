@@ -74,8 +74,13 @@ input::placeholder, textarea::placeholder { color: #b4b0a7; }
 .guide-row p { margin: 0; font-size: 12px; line-height: 1.35; }
 .composer-card, .review-card { padding: 30px 32px; }
 .composer-head, .review-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
-.week-control { min-width: 154px; margin: 0; }
+.week-control { min-width: 238px; margin: 0; }
 .week-control span { display: block; margin-bottom: 7px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .12em; }
+.week-picker { display: grid; grid-template-columns: 29px minmax(0, 1fr) 29px; gap: 5px; align-items: center; }
+.week-picker input { min-width: 0; padding: 10px 8px; font-size: 12px; }
+.week-arrow { height: 38px; padding: 0; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: #fffefa; font-size: 17px; line-height: 1; }
+.week-arrow:hover { border-color: var(--coral); color: var(--coral-dark); background: #fff5f1; }
+.week-range { display: block; margin-top: 6px; color: var(--muted); font-size: 10px; text-align: center; }
 select { appearance: none; padding: 10px 30px 10px 12px; border-radius: 9px; background: #fffefa url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m2 4 4 4 4-4' fill='none' stroke='%2377746b' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 11px center; font-size: 12px; }
 .question-block { margin: 29px 0 13px; }
 .question-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; color: var(--ink); font-size: 12px; font-weight: 600; }
@@ -170,7 +175,7 @@ footer { display: flex; justify-content: space-between; padding: 20px 0 28px; bo
   .composer-card, .review-card { padding: 22px 18px; }
   .composer-head, .review-head { display: block; }
   .week-control { display: block; margin-top: 19px; }
-  .week-control select { width: 100%; }
+  .week-control { min-width: 0; }
   .question-head { align-items: flex-start; flex-direction: column; gap: 3px; }
   .task-row { grid-template-columns: 1fr 25px; }
   .task-row select[data-task-sphere], .task-row input[data-task-text], .task-row select[data-task-day], .task-row input[type="number"] { grid-column: 1; }

@@ -2,6 +2,7 @@ const state = {
   user: null,
   config: null,
   draft: null,
+  week: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -29,12 +30,47 @@ function setLoading(button, loading, label) {
   if (label) button.querySelector("span").textContent = loading ? "Подожди…" : label;
 }
 
+function parseIsoDate(value) {
+  const [year, month, day] = String(value).split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function isoDate(date) {
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
+}
+
+function mondayOf(date) {
+  const result = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const daysSinceMonday = (result.getDay() + 6) % 7;
+  result.setDate(result.getDate() - daysSinceMonday);
+  return result;
+}
+
+function compactDate(date) {
+  return `${date.getDate()}.${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function makeWeekLabel(start) {
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+  return `${compactDate(start)}-${compactDate(end)}`;
+}
+
+function setSelectedWeek(value, shouldLoad = true) {
+  const start = mondayOf(parseIsoDate(value));
+  state.week = { start: isoDate(start), label: makeWeekLabel(start) };
+  $("#week-date").value = state.week.start;
+  $("#week-range").textContent = `${state.week.label} · можно выбрать любую неделю`;
+  if (shouldLoad) {
+    if (state.draft && state.draft.week_label !== state.week.label) {
+      startOver();
+      setMessage($("#plan-message"), "Неделя изменена — старый черновик сброшен.", "success");
+    }
+    loadSchedule();
+  }
+}
+
 function populateWeeks() {
-  const select = $("#week-select");
-  select.innerHTML = `
-    <option value="${state.config.current_week}">Текущая · ${state.config.current_week}</option>
-    <option value="${state.config.next_week}">Следующая · ${state.config.next_week}</option>
-  `;
+  setSelectedWeek(state.config.current_week_start, false);
 }
 
 function showUser(user) {
@@ -167,14 +203,14 @@ async function loadSchedule(force = false) {
     renderScheduleStatus({ connected: false, events: [] });
     return;
   }
-  const week = $("#week-select").value;
+  const week = state.week;
   const button = $("#sync-schedule");
   button.disabled = true;
   $("#schedule-status").textContent = force ? "обновляю…" : "загружаю…";
   try {
     const result = force
-      ? await api("/api/schedule/sync", { method: "POST", body: JSON.stringify({ week_label: week }) })
-      : await api(`/api/schedule?week=${encodeURIComponent(week)}`);
+      ? await api("/api/schedule/sync", { method: "POST", body: JSON.stringify({ week_label: week.label, week_start: week.start }) })
+      : await api(`/api/schedule?week=${encodeURIComponent(week.label)}&week_start=${encodeURIComponent(week.start)}`);
     renderScheduleStatus(result);
   } catch (error) {
     $("#schedule-status").textContent = error.message;
@@ -254,7 +290,8 @@ async function generate() {
     const result = await api("/api/plan/generate", {
       method: "POST",
       body: JSON.stringify({
-        week_label: $("#week-select").value,
+        week_label: state.week.label,
+        week_start: state.week.start,
         source_text: sourceText,
         include_schedule: $("#include-schedule").checked,
       }),
@@ -280,6 +317,7 @@ async function applyCorrection() {
       method: "POST",
       body: JSON.stringify({
         week_label: state.draft.week_label,
+        week_start: state.week.start,
         draft: state.draft,
         correction: input.value.trim(),
         include_schedule: $("#include-schedule").checked,
@@ -341,7 +379,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("#generate-button").addEventListener("click", generate);
   $("#connect-skyeng").addEventListener("click", connectSkyeng);
   $("#sync-schedule").addEventListener("click", () => loadSchedule(true));
-  $("#week-select").addEventListener("change", () => loadSchedule());
+  $("#week-date").addEventListener("change", (event) => setSelectedWeek(event.target.value));
+  $("#previous-week").addEventListener("click", () => {
+    const start = parseIsoDate(state.week.start);
+    start.setDate(start.getDate() - 7);
+    setSelectedWeek(isoDate(start));
+  });
+  $("#next-week").addEventListener("click", () => {
+    const start = parseIsoDate(state.week.start);
+    start.setDate(start.getDate() + 7);
+    setSelectedWeek(isoDate(start));
+  });
   $("#include-schedule").addEventListener("change", () => {
     const status = $("#schedule-status");
     if (state.user && $("#include-schedule").checked) {
