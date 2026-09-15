@@ -24,6 +24,9 @@ class Settings:
     skyeng_storage_state_file: Path
     database_path: Path
     app_timezone: str
+    freshmen_spreadsheet_id: str = ""
+    curator_password: str = ""
+    opencode_review_agent: str = "reviewer"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -100,4 +103,7 @@ class Settings:
             ).expanduser(),
             database_path=Path(os.getenv("DATABASE_PATH", "./bot.sqlite3")).expanduser(),
             app_timezone=os.getenv("APP_TIMEZONE", "Europe/Moscow").strip(),
+            freshmen_spreadsheet_id=os.getenv("FRESHMEN_SPREADSHEET_ID", "").strip(),
+            curator_password=os.getenv("CURATOR_PASSWORD", "").strip(),
+            opencode_review_agent=os.getenv("OPENCODE_REVIEW_AGENT", "reviewer").strip() or "reviewer",
         )
