@@ -147,3 +147,25 @@ def test_unknown_student_raises_key_error(db) -> None:
         service.student_report("Никто", LABEL)
     with pytest.raises(KeyError):
         asyncio.run(service.analyze_student("Никто", LABEL))
+
+
+def test_allowed_students_filter_overview_and_access(db) -> None:
+    students = {
+        "Альфа": {LABEL: make_week("Альфа")},
+        "Бета": {LABEL: make_week("Бета")},
+        "Пустой": {},
+    }
+    service = ReviewService(
+        FakeReader(Group(students=students, example={})),
+        FakeAnalyzer(),
+        db,
+        lambda: TODAY,
+        allowed_students=("Альфа", "Пустой"),
+    )
+
+    assert service.students() == ["Альфа", "Пустой"]
+    assert [report.student for report in service.group_overview(LABEL)] == ["Альфа", "Пустой"]
+    with pytest.raises(KeyError):
+        service.student_report("Бета", LABEL)
+    with pytest.raises(KeyError):
+        asyncio.run(service.analyze_student("Бета", LABEL))

@@ -57,6 +57,7 @@ if settings.freshmen_spreadsheet_id and settings.curator_password:
         ReviewAnalyzer(OpenCodeRunner.from_settings(settings, settings.opencode_review_agent)),
         database,
         lambda: local_today(settings.app_timezone),
+        settings.curator_students or None,
     )
     review_queue = ReviewQueue(review_service.analyze_student)
     app.include_router(

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Collection, Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any
@@ -81,23 +81,40 @@ class ReviewService:
         analyzer: Any,
         database: Database,
         today: Callable[[], date],
+        allowed_students: Collection[str] | None = None,
     ):
         self.reader = reader
         self.analyzer = analyzer
         self.database = database
         self.today = today
+        self.allowed_students = (
+            frozenset(" ".join(student.split()) for student in allowed_students)
+            if allowed_students is not None
+            else None
+        )
+
+    def _is_allowed(self, student: str) -> bool:
+        return self.allowed_students is None or " ".join(student.split()) in self.allowed_students
 
     def students(self) -> list[str]:
-        return sorted(self.reader.read_group().students)
+        return sorted(
+            student
+            for student in self.reader.read_group().students
+            if self._is_allowed(student)
+        )
 
     def group_overview(self, week_label: str) -> list[StudentReport]:
         group = self.reader.read_group()
-        reports = [self._report(group, student, week_label) for student in group.students]
+        reports = [
+            self._report(group, student, week_label)
+            for student in group.students
+            if self._is_allowed(student)
+        ]
         return sorted(reports, key=lambda report: (STATUS_ORDER[report.status], report.student))
 
     def student_report(self, student: str, week_label: str) -> StudentReport:
         group = self.reader.read_group()
-        if student not in group.students:
+        if student not in group.students or not self._is_allowed(student):
             raise KeyError(student)
         return self._report(group, student, week_label)
 
@@ -110,7 +127,7 @@ class ReviewService:
 
     async def analyze_student(self, student: str, week_label: str) -> None:
         group = await asyncio.to_thread(self.reader.read_group)
-        if student not in group.students:
+        if student not in group.students or not self._is_allowed(student):
             raise KeyError(student)
         week = group.week_of(student, week_label)
         today = self.today()

@@ -27,6 +27,7 @@ class Settings:
     freshmen_spreadsheet_id: str = ""
     curator_password: str = ""
     opencode_review_agent: str = "reviewer"
+    curator_students: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -106,4 +107,9 @@ class Settings:
             freshmen_spreadsheet_id=os.getenv("FRESHMEN_SPREADSHEET_ID", "").strip(),
             curator_password=os.getenv("CURATOR_PASSWORD", "").strip(),
             opencode_review_agent=os.getenv("OPENCODE_REVIEW_AGENT", "reviewer").strip() or "reviewer",
+            curator_students=tuple(
+                " ".join(student.split())
+                for student in os.getenv("CURATOR_STUDENTS", "").split(",")
+                if student.strip()
+            ),
         )
