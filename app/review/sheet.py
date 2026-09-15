@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from threading import Lock
 from typing import Any
 
 from google.oauth2 import service_account
@@ -100,6 +101,7 @@ class FreshmenSheetReader:
     def __init__(self, service: Any, spreadsheet_id: str):
         self.service = service
         self.spreadsheet_id = spreadsheet_id
+        self._read_lock = Lock()
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "FreshmenSheetReader":
@@ -114,6 +116,13 @@ class FreshmenSheetReader:
         return cls(service, settings.freshmen_spreadsheet_id)
 
     def read_group(self) -> Group:
+        # googleapiclient's default httplib2 transport is not thread-safe.
+        # Queue workers and the HTTP polling path can request the group at the
+        # same time, so serialize access to the shared service instance.
+        with self._read_lock:
+            return self._read_group()
+
+    def _read_group(self) -> Group:
         try:
             meta = self.service.spreadsheets().get(
                 spreadsheetId=self.spreadsheet_id,
