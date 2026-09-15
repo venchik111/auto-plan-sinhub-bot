@@ -54,6 +54,20 @@ class Database:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS review_results (
+                    student TEXT NOT NULL,
+                    week_label TEXT NOT NULL,
+                    data_hash TEXT NOT NULL,
+                    llm_json TEXT,
+                    model TEXT,
+                    error TEXT,
+                    analyzed_at TEXT NOT NULL,
+                    PRIMARY KEY (student, week_label)
+                )
+                """
+            )
 
     def register_user(self, telegram_id: int, display_name: str, sheet_name: str) -> None:
         with sqlite3.connect(self.path) as connection:
@@ -237,3 +251,41 @@ class Database:
         result = dict(row)
         result["phase"] = "writing"
         return result
+
+    def get_review_result(self, student: str, week_label: str) -> dict[str, Any] | None:
+        with sqlite3.connect(self.path) as connection:
+            connection.row_factory = sqlite3.Row
+            row = connection.execute(
+                """
+                SELECT data_hash, llm_json, model, error, analyzed_at
+                FROM review_results WHERE student = ? AND week_label = ?
+                """,
+                (student, week_label),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def save_review_result(
+        self,
+        student: str,
+        week_label: str,
+        data_hash: str,
+        llm_json: str | None,
+        model: str | None,
+        error: str | None,
+        analyzed_at: str,
+    ) -> None:
+        with sqlite3.connect(self.path) as connection:
+            connection.execute(
+                """
+                INSERT INTO review_results
+                    (student, week_label, data_hash, llm_json, model, error, analyzed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(student, week_label) DO UPDATE SET
+                    data_hash=excluded.data_hash,
+                    llm_json=excluded.llm_json,
+                    model=excluded.model,
+                    error=excluded.error,
+                    analyzed_at=excluded.analyzed_at
+                """,
+                (student, week_label, data_hash, llm_json, model, error, analyzed_at),
+            )

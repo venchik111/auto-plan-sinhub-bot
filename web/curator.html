@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f4ef">
+  <title>Проверка планов — куратор</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/curator.css">
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="/curator" aria-label="Проверка планов">
+        <span class="brand-mark">✳</span>
+        <span>проверка планов</span>
+      </a>
+      <button class="text-button hidden" id="logout" type="button">выйти</button>
+    </header>
+
+    <main>
+      <section class="card curator-login hidden" id="login-card">
+        <div class="card-kicker">КУРАТОР</div>
+        <h2>Вход для куратора</h2>
+        <p class="muted">Раздел показывает планы всех студентов группы, поэтому закрыт паролем.</p>
+        <form id="login-form">
+          <label for="password">Пароль</label>
+          <div class="input-with-button">
+            <input id="password" type="password" autocomplete="current-password" required>
+            <button class="icon-button" type="submit" aria-label="Войти">→</button>
+          </div>
+          <div class="form-message" id="login-message" role="status"></div>
+        </form>
+      </section>
+
+      <section class="curator hidden" id="curator">
+        <div class="curator-head">
+          <div>
+            <div class="eyebrow">ПРОВЕРКА ПЛАНОВ <span>1 КУРС</span></div>
+            <h1 class="curator-title">Кому нужна<br><em>встреча?</em></h1>
+          </div>
+          <div class="curator-controls">
+            <div class="week-control">
+              <span>НЕДЕЛЯ</span>
+              <div class="week-picker">
+                <button class="week-arrow" id="previous-week" type="button" aria-label="Предыдущая неделя">←</button>
+                <input id="week-date" type="date" aria-label="Любой день нужной недели">
+                <button class="week-arrow" id="next-week" type="button" aria-label="Следующая неделя">→</button>
+              </div>
+              <small class="week-range" id="week-range">—</small>
+            </div>
+            <button class="primary-button" id="analyze-group" type="button"><span>Проанализировать группу</span><b>↻</b></button>
+          </div>
+        </div>
+
+        <div class="queue-bar hidden" id="queue-bar">
+          <div class="queue-track"><i id="queue-fill"></i></div>
+          <small id="queue-text"></small>
+        </div>
+        <div class="form-message" id="page-message" role="status"></div>
+
+        <div class="curator-grid">
+          <aside class="card student-list" id="student-list" aria-label="Студенты"></aside>
+          <article class="card student-report" id="student-report">
+            <p class="muted">Выбери студента слева.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="/static/curator.js" defer></script>
+</body>
+</html>

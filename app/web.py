@@ -14,9 +14,15 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import Settings
+from .curator_web import create_curator_router
 from .database import Database
 from .llm import LLMError, OpenAICompatibleLLM
 from .models import DAYS, SPHERES, PlanDraft, PlanValidationError
+from .opencode_cli import OpenCodeRunner
+from .review.analyzer import ReviewAnalyzer
+from .review.queue import ReviewQueue
+from .review.service import ReviewService
+from .review.sheet import FreshmenSheetReader
 from .skyeng import SkyengAuthError, SkyengError, SkyengScheduleClient, render_schedule
 from .sheets import SheetsError, SheetsRepository
 from .weeks import is_week_label, local_today, week_label, week_start as get_week_start
@@ -42,6 +48,21 @@ skyeng_auth_errors: dict[str, str] = {}
 
 app = FastAPI(title="Авто-планирование", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
+
+# The curator review section is optional: it needs its own spreadsheet and a
+# password, otherwise the student site runs exactly as before.
+if settings.freshmen_spreadsheet_id and settings.curator_password:
+    review_service = ReviewService(
+        FreshmenSheetReader.from_settings(settings),
+        ReviewAnalyzer(OpenCodeRunner.from_settings(settings, settings.opencode_review_agent)),
+        database,
+        lambda: local_today(settings.app_timezone),
+        settings.curator_students or None,
+    )
+    review_queue = ReviewQueue(review_service.analyze_student)
+    app.include_router(
+        create_curator_router(review_service, review_queue, settings.curator_password, WEB_DIR)
+    )
 
 
 class RegisterRequest(BaseModel):
@@ -90,7 +111,7 @@ async def _watch_skyeng_auth(
         output = (stderr or stdout).decode("utf-8", "replace").strip()
         if "TargetClosedError" in output or "target, context or browser has been closed" in output:
             message = "Окно входа Skyeng закрыли до завершения авторизации."
-        elif "Executable doesn't exist" in output:
+        elif "executable doesn't exist" in output.lower():
             message = "Не найден браузер для окна входа Skyeng."
         else:
             message = "Не удалось завершить подключение Skyeng. Попробуй ещё раз."

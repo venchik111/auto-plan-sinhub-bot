@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -20,12 +21,22 @@ def main() -> int:
         help="завершить автоматически после успешной загрузки расписания",
     )
     args = parser.parse_args()
+    # The web app reads this output through a pipe and decodes it as UTF-8;
+    # on Windows a pipe defaults to the ANSI code page, which has no Cyrillic.
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     settings = Settings.from_env()
     target = args.storage_state or settings.skyeng_storage_state_file
     target.parent.mkdir(parents=True, exist_ok=True)
-    executable = os.getenv("BROWSER_EXECUTABLE", "/usr/bin/chromium")
+    executable = os.getenv("BROWSER_EXECUTABLE", "").strip()
+    if not executable and Path("/usr/bin/chromium").exists():
+        executable = "/usr/bin/chromium"
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=False, executable_path=executable)
+        # Without an explicit executable Playwright uses its own bundled
+        # Chromium (installed by `playwright install chromium`), e.g. on Windows.
+        browser = playwright.chromium.launch(
+            headless=False, executable_path=executable or None
+        )
         context = browser.new_context()
         page = context.new_page()
         authenticated = False
