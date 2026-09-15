@@ -223,9 +223,14 @@ function renderReport(report) {
         <button class="primary-button" id="analyze-student" type="button" ${busy ? "disabled" : ""}>
           <span>${report.llm_state === "none" ? "Проанализировать" : "Проанализировать заново"}</span><b>↻</b>
         </button>
+        <button class="secondary-button" id="export-student-pdf" type="button">
+          <span>Скачать рекомендации PDF</span><b>↓</b>
+        </button>
       </div>`}`;
   const button = $("#analyze-student");
   if (button) button.addEventListener("click", () => analyze(report.student, button));
+  const exportButton = $("#export-student-pdf");
+  if (exportButton) exportButton.addEventListener("click", () => exportPdf(report.student, exportButton));
 }
 
 async function analyze(student, button) {
@@ -236,6 +241,42 @@ async function analyze(student, button) {
     if (!student && result.added === 0) setMessage($("#page-message"), "Все заполненные планы уже проанализированы.", "success");
     updateQueue(result.queue);
     await loadGroup();
+  } catch (error) {
+    handleError(error);
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+function pdfFilename(response, fallback) {
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (!match) return fallback;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch (_) {
+    return fallback;
+  }
+}
+
+async function exportPdf(student, button) {
+  setLoading(button, true);
+  try {
+    const response = await fetch(`/api/curator/review/student.pdf?name=${encodeURIComponent(student)}&week=${encodeURIComponent(state.week.label)}`);
+    if (response.status === 401) throw new AuthError("Нужен вход куратора.");
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.detail || "Не удалось подготовить PDF.");
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = pdfFilename(response, `рекомендации-${student}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch (error) {
     handleError(error);
   } finally {

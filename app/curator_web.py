@@ -5,12 +5,14 @@ import hashlib
 import hmac
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from .sheets import SheetsError
+from .review.pdf import build_student_recommendations_pdf
 from .weeks import canonical_week_label
 
 
@@ -109,6 +111,21 @@ def create_curator_router(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Студент не найден.") from exc
         return with_queue_state(report, report.to_dict())
+
+    @router.get("/api/curator/review/student.pdf", dependencies=curator_only)
+    async def student_pdf(name: str, week: str) -> Response:
+        label = parse_week(week)
+        try:
+            report = await call_service(service.student_report, name, label)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Студент не найден.") from exc
+        if report.status == "empty":
+            raise HTTPException(status_code=400, detail="Для пустого плана пока нечего экспортировать.")
+        content = await asyncio.to_thread(build_student_recommendations_pdf, report)
+        safe_name = "".join(char if char.isalnum() or char in " -_" else "_" for char in report.student).strip()
+        filename = f"рекомендации-{safe_name}-{report.week_label}.pdf"
+        disposition = f"attachment; filename=\"recommendations.pdf\"; filename*=UTF-8''{quote(filename)}"
+        return Response(content=content, media_type="application/pdf", headers={"Content-Disposition": disposition})
 
     @router.post("/api/curator/analyze", dependencies=curator_only)
     async def analyze(data: AnalyzeRequest) -> dict[str, Any]:

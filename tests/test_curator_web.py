@@ -132,6 +132,22 @@ def test_student_report(parts) -> None:
     assert response.json()["plan"] == {"goals": []}
 
 
+def test_student_pdf_export(parts, monkeypatch) -> None:
+    monkeypatch.setattr("app.curator_web.build_student_recommendations_pdf", lambda report: b"%PDF-test")
+    client, _, _ = parts
+    login(client)
+
+    response = client.get(
+        "/api/curator/review/student.pdf",
+        params={"name": "Бета", "week": "14.09-20.09"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert "filename*=UTF-8''%D1%80%D0%B5%D0%BA%D0%BE%D0%BC%D0%B5%D0%BD%D0%B4%D0%B0%D1%86%D0%B8%D0%B8-%D0%91%D0%B5%D1%82%D0%B0-14.09-20.09.pdf" in response.headers["content-disposition"]
+    assert response.content == b"%PDF-test"
+
+
 def test_analyze_group_and_student(parts) -> None:
     client, _, queue = parts
     login(client)
