@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-import asyncio
 import json
-import logging
-import os
-import re
 import uuid
 from typing import Any
 
@@ -12,13 +8,7 @@ import httpx
 
 from .config import Settings
 from .models import PlanDraft
-
-
-log = logging.getLogger(__name__)
-
-
-class LLMError(RuntimeError):
-    pass
+from .opencode_cli import LLMError, OpenCodeRunner, extract_json
 
 
 SYSTEM_PROMPT = """
@@ -64,11 +54,7 @@ class OpenAICompatibleLLM:
         self.api_key = settings.llm_api_key
         self.model = settings.llm_model
         self.base_url = settings.llm_base_url
-        self.opencode_bin = settings.opencode_bin
-        self.opencode_agent = settings.opencode_agent
-        self.opencode_models = settings.opencode_models
-        self.opencode_timeout = settings.opencode_timeout_seconds
-        self.opencode_directory = settings.opencode_directory
+        self.opencode = OpenCodeRunner.from_settings(settings)
 
     async def generate_plan(
         self,
@@ -96,38 +82,12 @@ class OpenAICompatibleLLM:
         return self._parse_plan(self._extract_content(data), week_label)
 
     async def _generate_with_opencode(self, prompt: str, week_label: str) -> PlanDraft:
-        models = self.opencode_models or (None,)
-        last_error: Exception | None = None
-        for attempt, model in enumerate(models, start=1):
-            model_name = model or "модель по умолчанию"
-            log.info(
-                "OpenCode CLI: запрос к модели «%s» (попытка %d из %d)",
-                model_name,
-                attempt,
-                len(models),
-            )
-            started = asyncio.get_running_loop().time()
-            try:
-                content = await self._run_opencode(prompt, model)
-                draft = self._parse_plan(content, week_label)
-                log.info(
-                    "OpenCode CLI: модель «%s» ответила за %.1f с, задач=%d",
-                    model_name,
-                    asyncio.get_running_loop().time() - started,
-                    len(draft.tasks),
-                )
-                return draft
-            except (LLMError, ValueError) as exc:
-                last_error = exc
-                log.warning(
-                    "OpenCode CLI: модель «%s» не смогла за %.1f с: %s",
-                    model_name,
-                    asyncio.get_running_loop().time() - started,
-                    exc,
-                )
-
-        detail = f" Последняя ошибка: {last_error}" if last_error else ""
-        raise LLMError(f"OpenCode не смог собрать план ни одной моделью.{detail}")
+        draft, _ = await self.opencode.run_with_fallback(
+            prompt,
+            lambda content: self._parse_plan(content, week_label),
+            failure_message="OpenCode не смог собрать план ни одной моделью.",
+        )
+        return draft
 
     @staticmethod
     def _user_prompt(
@@ -144,81 +104,6 @@ class OpenAICompatibleLLM:
             f"Правка пользователя:\n{correction or source_text}\n"
             "Верни полный обновлённый объект, а не только изменённые поля."
         )
-
-    async def _run_opencode(self, prompt: str, model: str | None) -> str:
-        args = [
-            "run",
-            "--format",
-            "json",
-            "--agent",
-            self.opencode_agent,
-            *( ["--model", model] if model else [] ),
-        ]
-        child_env = dict(os.environ)
-        # The CLI owns the provider session. If the user supplied an API key in
-        # the environment, keep it available to the CLI as an auth fallback.
-        opencode_directory = self.opencode_directory.resolve()
-        child_env["PWD"] = str(opencode_directory)
-
-        try:
-            process = await asyncio.create_subprocess_exec(
-                self.opencode_bin,
-                *args,
-                cwd=str(opencode_directory),
-                env=child_env,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-        except FileNotFoundError as exc:
-            raise LLMError(
-                f"OpenCode CLI не найден: {self.opencode_bin}. Установи opencode-ai или задай OPENCODE_BIN."
-            ) from exc
-        except OSError as exc:
-            raise LLMError(f"Не удалось запустить OpenCode CLI: {exc}") from exc
-
-        try:
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(prompt.encode("utf-8")),
-                timeout=self.opencode_timeout,
-            )
-        except asyncio.TimeoutError as exc:
-            process.kill()
-            await process.wait()
-            raise LLMError(f"OpenCode не ответил за {self.opencode_timeout} с") from exc
-
-        text_parts: list[str] = []
-        error_message: str | None = None
-        for line in stdout.decode("utf-8", "replace").splitlines():
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if event.get("type") == "text":
-                part = event.get("part") or {}
-                chunk = part.get("text") or event.get("text") or ""
-                if isinstance(chunk, str):
-                    text_parts.append(chunk)
-            elif event.get("type") == "error":
-                error = event.get("error") or {}
-                data = error.get("data") if isinstance(error, dict) else None
-                error_message = (
-                    data.get("message")
-                    if isinstance(data, dict)
-                    else str(error)
-                ) or json.dumps(event, ensure_ascii=False)
-
-        if process.returncode != 0 or error_message:
-            stderr_tail = stderr.decode("utf-8", "replace").strip()[-400:]
-            raise LLMError(
-                f"код выхода {process.returncode}, ошибка={error_message or 'нет'}"
-                f"{', stderr=' + stderr_tail if stderr_tail else ''}"
-            )
-
-        content = "".join(text_parts).strip()
-        if not content:
-            raise LLMError("OpenCode CLI не вернул текстовый ответ модели.")
-        return content
 
     async def _request_http(
         self, payload: dict[str, Any], session_id: str | None = None
@@ -257,7 +142,7 @@ class OpenAICompatibleLLM:
     @staticmethod
     def _parse_plan(content: str, week_label: str) -> PlanDraft:
         try:
-            parsed = json.loads(OpenAICompatibleLLM._extract_json(content))
+            parsed = json.loads(extract_json(content))
             return PlanDraft.from_dict(parsed, week_label)
         except (json.JSONDecodeError, TypeError, ValueError) as exc:
             raise LLMError(
@@ -274,17 +159,6 @@ class OpenAICompatibleLLM:
         if not isinstance(content, str) or not content.strip():
             raise LLMError("Модель вернула пустой ответ.")
         return content.strip()
-
-    @staticmethod
-    def _extract_json(content: str) -> str:
-        fenced = re.search(r"```(?:json)?\s*(\{.*\})\s*```", content, re.S | re.I)
-        if fenced:
-            return fenced.group(1)
-        start = content.find("{")
-        end = content.rfind("}")
-        if start >= 0 and end > start:
-            return content[start : end + 1]
-        return content
 
 
 # Backwards-compatible import name for integrations built before provider support.
