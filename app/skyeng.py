@@ -31,12 +31,17 @@ ONLINE_CALL_TYPES = {"live", "webinar"}
 WEEKDAYS = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
 EVENT_TYPE_LABELS = {
     "lesson": "урок",
-    "practice": "практика",
-    "trainer": "тренажёр",
+    "practice": "домашка",
+    "trainer": "подготовка к тесту в тренажере",
     "test": "тест",
     "planning": "планирование",
-    "live": "live-событие",
+    "live": "вебинар",
     "webinar": "вебинар",
+}
+EVENT_TIME_HINTS = {
+    "lesson": "ориентир 20 мин",
+    "practice": "не больше 60 мин",
+    "trainer": "ориентир 60 мин",
 }
 
 
@@ -189,8 +194,9 @@ def render_schedule(events: list[ScheduleEvent | dict[str, Any]]) -> str:
     normalized.sort(key=lambda event: (event.date, event.start, event.end, event.title))
     lines = [
         "РАСПИСАНИЕ SKYENG — ОНЛАЙН-ПЛАТФОРМА",
-        "Уроки, практики, тренажёры и тесты не нужно посещать как обычные пары: это активности, которые нужно выполнить на платформе.",
-        "Время онлайн-активности — ориентир и длительность выполнения, а не занятый интервал. Вебинары и практика с наставником — это онлайн-созвоны внутри Skyeng с фиксированным временем подключения.",
+        "Словарь: платформа Skyeng = ЛК; practice по уроку = домашка; trainer = подготовка к тесту в тренажере.",
+        "Уроки, домашки, тренажеры и тесты не нужно посещать как обычные пары: это активности, которые нужно выполнить в ЛК.",
+        "Ориентиры времени: урок в ЛК — 15–20 минут, домашка — не больше 60 минут, подготовка к тесту в тренажере — около 60 минут. Вебинары и практика с наставником — вебинары внутри Skyeng с фиксированным временем.",
     ]
     current_day = ""
     for event in normalized:
@@ -202,9 +208,12 @@ def render_schedule(events: list[ScheduleEvent | dict[str, Any]]) -> str:
         subject = f"{event.program}: " if event.program and event.program != event.title else ""
         activity_label = EVENT_TYPE_LABELS.get(event.event_type, event.event_type or "активность")
         if event.event_type in ONLINE_TASK_TYPES:
-            marker = f"{activity_label}; выполнить на платформе"
+            marker = f"{activity_label}; выполнить в ЛК"
+            time_hint = EVENT_TIME_HINTS.get(event.event_type)
+            if time_hint:
+                marker += f"; {time_hint}"
         elif event.event_type in ONLINE_CALL_TYPES:
-            marker = f"{activity_label}; онлайн-созвон на платформе, учесть как фиксированное"
+            marker = f"{activity_label}; учесть как фиксированное время"
         else:
             marker = f"{activity_label}; учесть в плане"
         lines.append(f"- {event.start}–{event.end} — {subject}{event.title} [{marker}]")

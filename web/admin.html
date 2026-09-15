@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Авто-планирование — администратор</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+  <main class="admin-shell">
+    <header>
+      <div>
+        <div class="kicker">АВТО-ПЛАНИРОВАНИЕ</div>
+        <h1>Заявки на регистрацию</h1>
+      </div>
+      <button id="admin-logout" class="link-button hidden" type="button">выйти</button>
+    </header>
+
+    <section id="admin-login-card" class="card login-card">
+      <p>Введи пароль администратора, чтобы управлять доступом студентов.</p>
+      <form id="admin-login-form">
+        <input id="admin-password" type="password" placeholder="Пароль администратора" autocomplete="current-password" required>
+        <button type="submit">Войти</button>
+      </form>
+      <div id="admin-login-message" class="message"></div>
+    </section>
+
+    <section id="accounts-card" class="card hidden">
+      <div class="toolbar">
+        <p id="accounts-summary">Загрузка…</p>
+        <button id="refresh-accounts" class="secondary" type="button">Обновить</button>
+      </div>
+      <div id="accounts-list" class="accounts-list"></div>
+      <div id="accounts-message" class="message"></div>
+    </section>
+  </main>
+  <script src="/static/admin.js" defer></script>
+</body>
+</html>

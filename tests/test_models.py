@@ -32,3 +32,36 @@ def test_week_label_parser() -> None:
     assert is_week_label("05.10-11.10")
     assert not is_week_label("следующая неделя")
 
+
+def test_plan_normalizes_typographic_quotes() -> None:
+    draft = PlanDraft.from_dict(
+        {
+            "goals": ["Закрыть модуль «Основы Python»"],
+            "tasks": [
+                {
+                    "sphere": "Профиль",
+                    "task": "Выполнить урок “Оператор if.” в ЛК",
+                    "day": "Пн",
+                }
+            ],
+        },
+        "14.09-20.09",
+    )
+    assert draft.goals == ('Закрыть модуль "Основы Python"',)
+    assert draft.tasks[0].text == 'Выполнить урок "Оператор if." в ЛК'
+
+
+def test_plan_warns_about_overload_and_duplicate_tasks() -> None:
+    draft = PlanDraft.from_dict(
+        {
+            "goals": ["Подготовиться к тесту"],
+            "tasks": [
+                {"sphere": "Профиль", "task": "Решить задачи", "day": "Пн", "time_minutes": 120},
+                {"sphere": "Профиль", "task": "Решить задачи", "day": "Пн", "time_minutes": 90},
+            ],
+        },
+        "14.09-20.09",
+    )
+
+    assert any("Конфликт нагрузки" in warning for warning in draft.warnings)
+    assert any("дублируется" in warning for warning in draft.warnings)

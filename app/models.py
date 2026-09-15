@@ -9,6 +9,7 @@ from typing import Any
 
 SPHERES = ("База", "Профиль", "Коллектив", "Спорт", "Личное")
 DAYS = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
+DAILY_LOAD_LIMIT_MINUTES = 180
 
 _SPHERE_ALIASES = {
     "база": "База",
@@ -42,7 +43,13 @@ class PlanValidationError(ValueError):
 
 
 def _clean_text(value: Any) -> str:
-    return " ".join(str(value or "").strip().split())
+    # Keep generated plans in the plain-text style used in the sheet. In
+    # particular, normalize typographic quotation marks from an LLM to ASCII
+    # double quotes so the output is consistent across providers.
+    normalized = str(value or "").translate(
+        str.maketrans({"«": '"', "»": '"', "“": '"', "”": '"'})
+    )
+    return " ".join(normalized.strip().split())
 
 
 def normalize_sphere(value: Any) -> str:
@@ -165,6 +172,24 @@ class PlanDraft:
         for day, count in by_day.items():
             if count > 3:
                 warnings.append(f"На {day} запланировано {count} задач. В методичке рекомендуется не больше 3.")
+        for day in DAYS:
+            load = sum(
+                task.time_minutes or 0 for task in self.tasks if task.day == day
+            )
+            if load > DAILY_LOAD_LIMIT_MINUTES:
+                warnings.append(
+                    f"Конфликт нагрузки: на {day} запланировано {load} минут задач. "
+                    f"Лучше распределить их равномернее."
+                )
+        seen: dict[tuple[str, str], int] = {}
+        for task in self.tasks:
+            signature = (task.day, task.text.casefold())
+            if signature in seen:
+                warnings.append(
+                    f"Конфликт: задача \"{task.text}\" дублируется на {task.day}."
+                )
+            else:
+                seen[signature] = 1
         if len({task.sphere for task in self.tasks}) > 4:
             warnings.append("Задействованы почти все сферы. Проверь, не распыляется ли план.")
         missing_time = sum(task.time_minutes is None for task in self.tasks)

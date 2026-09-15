@@ -45,6 +45,31 @@ class Database:
             )
             connection.execute(
                 """
+                CREATE TABLE IF NOT EXISTS accounts (
+                    account_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    login TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    sheet_name TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    profile_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    approved_at TEXT
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS account_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    account_id INTEGER NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(account_id) REFERENCES accounts(account_id)
+                )
+                """
+            )
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS web_schedule_cache (
                     session_id TEXT NOT NULL,
                     week_label TEXT NOT NULL,
@@ -117,6 +142,112 @@ class Database:
                 (session_id,),
             ).fetchone()
         return dict(row) if row else None
+
+    def create_account(
+        self,
+        login: str,
+        password_hash: str,
+        display_name: str,
+        sheet_name: str,
+    ) -> dict[str, Any]:
+        with sqlite3.connect(self.path) as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO accounts (login, password_hash, display_name, sheet_name)
+                VALUES (?, ?, ?, ?)
+                """,
+                (login, password_hash, display_name, sheet_name),
+            )
+            account_id = int(cursor.lastrowid)
+        return self.get_account(account_id) or {}
+
+    def get_account(self, account_id: int) -> dict[str, Any] | None:
+        with sqlite3.connect(self.path) as connection:
+            connection.row_factory = sqlite3.Row
+            row = connection.execute(
+                "SELECT * FROM accounts WHERE account_id = ?", (account_id,)
+            ).fetchone()
+        return self._account_dict(row) if row else None
+
+    def get_account_by_login(self, login: str) -> dict[str, Any] | None:
+        with sqlite3.connect(self.path) as connection:
+            connection.row_factory = sqlite3.Row
+            row = connection.execute(
+                "SELECT * FROM accounts WHERE login = ?", (login,)
+            ).fetchone()
+        return self._account_dict(row) if row else None
+
+    def list_accounts(self, status: str | None = None) -> list[dict[str, Any]]:
+        query = "SELECT * FROM accounts"
+        params: tuple[Any, ...] = ()
+        if status:
+            query += " WHERE status = ?"
+            params = (status,)
+        query += " ORDER BY created_at DESC, account_id DESC"
+        with sqlite3.connect(self.path) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(query, params).fetchall()
+        return [self._account_dict(row) for row in rows]
+
+    @staticmethod
+    def _account_dict(row: sqlite3.Row) -> dict[str, Any]:
+        result = dict(row)
+        try:
+            result["profile"] = json.loads(result.pop("profile_json") or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            result["profile"] = {}
+            result.pop("profile_json", None)
+        return result
+
+    def set_account_status(self, account_id: int, status: str) -> bool:
+        if status not in {"pending", "approved", "rejected"}:
+            raise ValueError("Unknown account status")
+        with sqlite3.connect(self.path) as connection:
+            cursor = connection.execute(
+                """
+                UPDATE accounts
+                SET status = ?, approved_at = CASE WHEN ? = 'approved' THEN CURRENT_TIMESTAMP ELSE approved_at END
+                WHERE account_id = ?
+                """,
+                (status, status, account_id),
+            )
+        return cursor.rowcount == 1
+
+    def create_account_session(self, session_id: str, account_id: int) -> None:
+        with sqlite3.connect(self.path) as connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO account_sessions (session_id, account_id) VALUES (?, ?)",
+                (session_id, account_id),
+            )
+
+    def get_account_by_session(self, session_id: str) -> dict[str, Any] | None:
+        with sqlite3.connect(self.path) as connection:
+            connection.row_factory = sqlite3.Row
+            row = connection.execute(
+                """
+                SELECT a.* FROM accounts a
+                JOIN account_sessions s ON s.account_id = a.account_id
+                WHERE s.session_id = ? AND a.status = 'approved'
+                """,
+                (session_id,),
+            ).fetchone()
+        return self._account_dict(row) if row else None
+
+    def delete_account_session(self, session_id: str) -> None:
+        with sqlite3.connect(self.path) as connection:
+            connection.execute("DELETE FROM account_sessions WHERE session_id = ?", (session_id,))
+
+    def update_account_profile(self, account_id: int, updates: dict[str, Any]) -> None:
+        account = self.get_account(account_id)
+        if not account:
+            return
+        profile = dict(account.get("profile") or {})
+        profile.update(updates)
+        with sqlite3.connect(self.path) as connection:
+            connection.execute(
+                "UPDATE accounts SET profile_json = ? WHERE account_id = ?",
+                (json.dumps(profile, ensure_ascii=False), account_id),
+            )
 
     def save_web_schedule(
         self,

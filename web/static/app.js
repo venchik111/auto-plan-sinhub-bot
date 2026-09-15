@@ -76,17 +76,27 @@ function populateWeeks() {
 function showUser(user) {
   state.user = user;
   $("#connected-name").textContent = user.display_name;
-  $("#register-form").classList.add("hidden");
+  $("#auth-guest").classList.add("hidden");
   $("#connected-state").classList.remove("hidden");
-  $("#generate-button").disabled = !hasPlanningDetails($("#source-text").value);
+  const savedAnswers = user.profile?.guiding_answers || {};
+  document.querySelectorAll("[data-guiding-answer]").forEach((input) => {
+    input.value = savedAnswers[input.dataset.guidingAnswer] || "";
+  });
+  $("#generate-button").disabled = !hasPlanningDetails($("#source-text").value, collectGuidingAnswers());
   document.querySelectorAll(".step")[0].classList.remove("active");
   document.querySelectorAll(".step")[1].classList.add("active");
 }
 
 function showRegistration() {
-  $("#register-form").classList.remove("hidden");
-  $("#connected-state").classList.add("hidden");
-  $("#display-name").focus();
+  $("#login-form").classList.add("hidden");
+  $("#account-register-form").classList.remove("hidden");
+  $("#register-login").focus();
+}
+
+function showLogin() {
+  $("#account-register-form").classList.add("hidden");
+  $("#login-form").classList.remove("hidden");
+  $("#login").focus();
 }
 
 function selectOptions(values, selected) {
@@ -97,11 +107,65 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
 }
 
+function taskDuration(task) {
+  return Number(task?.time_minutes) || 0;
+}
+
+function taskText(task) {
+  return String(task?.text ?? task?.task ?? "").trim();
+}
+
+function clientWarnings(tasks = []) {
+  const warnings = [];
+  const loads = {};
+  const seen = new Set();
+  (Array.isArray(tasks) ? tasks : []).forEach((task) => {
+    const day = String(task?.day ?? "");
+    const text = taskText(task);
+    loads[day] = (loads[day] || 0) + taskDuration(task);
+    const signature = `${day}|${text.toLocaleLowerCase()}`;
+    if (text && seen.has(signature)) {
+      warnings.push(`Конфликт: задача "${text}" дублируется на ${day}.`);
+    }
+    seen.add(signature);
+  });
+  Object.entries(loads).forEach(([day, load]) => {
+    if (load > 180) warnings.push(`Конфликт нагрузки: на ${day} запланировано ${load} минут задач. Лучше распределить их равномернее.`);
+  });
+  return warnings;
+}
+
+function taskRowHtml(task, index) {
+  const text = taskText(task);
+  const sphere = task?.sphere || state.config.spheres[0];
+  const time = task?.time_minutes ?? "";
+  return `
+    <div class="task-row" data-task-index="${index}" draggable="true">
+      <span class="drag-handle" title="Перетащи задачу в другой день" aria-label="Перетащить задачу">⠿</span>
+      <select data-task-sphere aria-label="Сфера">${selectOptions(state.config.spheres, sphere)}</select>
+      <input data-task-text value="${escapeHtml(text)}" maxlength="300" aria-label="Задача">
+      <input data-task-time type="number" min="1" max="1440" placeholder="мин" value="${escapeHtml(time)}" aria-label="Минуты">
+      <button class="delete-button" type="button" data-delete-task="${index}" aria-label="Удалить задачу">×</button>
+    </div>
+  `;
+}
+
 function renderDraft(draft) {
-  state.draft = draft;
+  const tasks = (Array.isArray(draft?.tasks) ? draft.tasks : []).map((task) => ({
+    ...task,
+    text: taskText(task),
+    sphere: task?.sphere || state.config.spheres[0],
+    day: state.config.days.includes(task?.day) ? task.day : state.config.days[0],
+  }));
+  const goals = (Array.isArray(draft?.goals) ? draft.goals : [])
+    .map((goal) => String(goal ?? "").trim())
+    .filter(Boolean);
+  const warnings = [...new Set([...(Array.isArray(draft?.warnings) ? draft.warnings : []), ...clientWarnings(tasks)])];
+  state.draft = { ...draft, goals, tasks, warnings };
   $("#review-card").classList.remove("hidden");
   $("#success-card").classList.add("hidden");
-  $("#goals-list").innerHTML = draft.goals.map((goal, index) => `
+  $("#reflection-card").classList.add("hidden");
+  $("#goals-list").innerHTML = goals.map((goal, index) => `
     <div class="goal-row">
       <span class="goal-number">${index + 1}</span>
       <input data-goal value="${escapeHtml(goal)}" maxlength="300" aria-label="Цель ${index + 1}">
@@ -109,58 +173,96 @@ function renderDraft(draft) {
     </div>
   `).join("");
 
-  $("#task-list").innerHTML = draft.tasks.map((task, index) => `
-    <div class="task-row" data-task-index="${index}">
-      <select data-task-sphere aria-label="Сфера">${selectOptions(state.config.spheres, task.sphere)}</select>
-      <input data-task-text value="${escapeHtml(task.text)}" maxlength="300" aria-label="Задача">
-      <select data-task-day aria-label="День">${selectOptions(state.config.days, task.day)}</select>
-      <input data-task-time type="number" min="1" max="1440" placeholder="мин" value="${task.time_minutes ?? ""}" aria-label="Минуты">
-      <button class="delete-button" type="button" data-delete-task="${index}" aria-label="Удалить задачу">×</button>
-    </div>
-  `).join("");
+  $("#task-list").innerHTML = state.config.days.map((day) => {
+    const dayTasks = tasks
+      .map((task, index) => ({ task, index }))
+      .filter(({ task }) => task.day === day);
+    return `
+      <section class="day-column" data-day-column="${day}">
+        <div class="day-column-head"><strong>${day}</strong><span data-day-load="${day}">0 мин</span></div>
+        <div class="day-dropzone" data-day-drop="${day}">
+          ${dayTasks.map(({ task, index }) => taskRowHtml(task, index)).join("") || '<span class="empty-day">Перетащи задачу сюда</span>'}
+        </div>
+      </section>
+    `;
+  }).join("");
+  updateDayLoads();
 
-  const warnings = $("#warnings-box");
-  $("#warnings-list").innerHTML = (draft.warnings || []).map((warning) => `<li>${escapeHtml(warning)}</li>`).join("");
-  warnings.classList.toggle("hidden", !(draft.warnings || []).length);
+  const warningsBox = $("#warnings-box");
+  $("#warnings-list").innerHTML = warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("");
+  warningsBox.classList.toggle("hidden", !warnings.length);
   document.querySelectorAll(".step")[1].classList.remove("active");
   document.querySelectorAll(".step")[2].classList.add("active");
   $("#review-card").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function updateDayLoads() {
+  document.querySelectorAll("[data-day-drop]").forEach((zone) => {
+    const load = [...zone.querySelectorAll("[data-task-time]")]
+      .reduce((total, input) => total + (Number(input.value) || 0), 0);
+    const badge = document.querySelector(`[data-day-load="${zone.dataset.dayDrop}"]`);
+    if (badge) {
+      badge.textContent = `${load} мин`;
+      badge.classList.toggle("overloaded", load > 180);
+    }
+  });
+}
+
+function refreshTaskWarnings() {
+  const current = collectDraft();
+  state.draft = current;
+  const warningsBox = $("#warnings-box");
+  $("#warnings-list").innerHTML = current.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("");
+  warningsBox.classList.toggle("hidden", !current.warnings.length);
+}
+
 function collectDraft() {
   const goals = [...document.querySelectorAll("[data-goal]")]
-    .map((input) => input.value.trim())
+    .map((input) => String(input?.value ?? "").trim())
     .filter(Boolean);
   const tasks = [...document.querySelectorAll("[data-task-index]")].map((row) => {
-    const time = row.querySelector("[data-task-time]").value.trim();
+    const sphereInput = row.querySelector("[data-task-sphere]");
+    const textInput = row.querySelector("[data-task-text]");
+    const timeInput = row.querySelector("[data-task-time]");
+    const dayZone = row.closest("[data-day-drop]");
+    const dayInput = row.querySelector("[data-task-day]");
+    const time = String(timeInput?.value ?? "").trim();
     return {
-      sphere: row.querySelector("[data-task-sphere]").value,
-      task: row.querySelector("[data-task-text]").value.trim(),
-      day: row.querySelector("[data-task-day]").value,
+      sphere: sphereInput?.value || state.config.spheres[0],
+      text: String(textInput?.value ?? "").trim(),
+      day: dayZone?.dataset.dayDrop || dayInput?.value || state.config.days[0],
       time_minutes: time ? Number(time) : null,
     };
   });
-  return { week_label: state.draft.week_label, goals, tasks, warnings: state.draft.warnings || [] };
+  const stableWarnings = (state.draft?.warnings || []).filter(
+    (warning) => !/^(Конфликт нагрузки:|Конфликт: задача |На .+ запланировано \d+ задач\.)/.test(warning),
+  );
+  return {
+    week_label: state.draft?.week_label || state.week.label,
+    goals,
+    tasks,
+    warnings: [...new Set([...stableWarnings, ...clientWarnings(tasks)])],
+  };
 }
 
-function insertPrompt(text) {
-  const textarea = $("#source-text");
-  const prefix = textarea.value.trim() ? `${textarea.value.trim()}\n\n` : "";
-  textarea.value = `${prefix}${text}`;
-  textarea.focus();
-  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-  updateComposerState();
+function collectGuidingAnswers() {
+  return [...document.querySelectorAll("[data-guiding-answer]")].reduce((answers, input) => {
+    const value = input.value.trim();
+    if (value) answers[input.dataset.guidingAnswer] = value;
+    return answers;
+  }, {});
 }
 
 function updateComposerState() {
   const text = $("#source-text").value;
   const length = text.length;
   $("#character-count").textContent = `${length} / 8000`;
-  $("#generate-button").disabled = !state.user || !hasPlanningDetails(text);
+  $("#generate-button").disabled = !state.user || !hasPlanningDetails(text, collectGuidingAnswers());
 }
 
-function hasPlanningDetails(text) {
-  const details = String(text || "")
+function hasPlanningDetails(text, answers = {}) {
+  const details = [String(text || ""), ...Object.values(answers)]
+    .join(" ")
     .replace(/^(Главный результат|Фиксированные дела|Ресурс и время|Не забыть):?\s*$/gim, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -172,7 +274,7 @@ function renderScheduleStatus(schedule) {
   const button = $("#sync-schedule");
   const connectButton = $("#connect-skyeng");
   if (!state.user) {
-    status.textContent = "Сначала подключи вкладку Google Sheets";
+    status.textContent = "Сначала войди в одобренный аккаунт";
     button.disabled = true;
     connectButton.disabled = true;
     connectButton.classList.add("hidden");
@@ -253,32 +355,70 @@ async function connectSkyeng() {
   }
 }
 
-async function register() {
-  const input = $("#display-name");
-  const message = $("#register-message");
-  const button = $("#register-form button[type=submit]");
+async function login() {
+  const message = $("#login-message");
+  const button = $("#login-form button[type=submit]");
   setMessage(message);
-  setLoading(button, true);
+  setLoading(button, true, "Войти");
   try {
-    const result = await api("/api/register", { method: "POST", body: JSON.stringify({ display_name: input.value.trim() }) });
+    const result = await api("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ login: $("#login").value.trim(), password: $("#login-password").value }),
+    });
     showUser(result.user);
-    setMessage(message, "Лист подключён.", "success");
+    setMessage(message, "Вход выполнен.", "success");
+    await loadSchedule();
     $("#composer-card").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
     setMessage(message, error.message);
   } finally {
-    setLoading(button, false);
+    setLoading(button, false, "Войти");
   }
+}
+
+async function registerAccount() {
+  const message = $("#register-message");
+  const button = $("#account-register-form button[type=submit]");
+  setMessage(message);
+  setLoading(button, true, "Отправить заявку");
+  try {
+    const result = await api("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        login: $("#register-login").value.trim(),
+        password: $("#register-password").value,
+        display_name: $("#display-name").value.trim(),
+      }),
+    });
+    setMessage(message, `${result.message} После одобрения можно войти.`, "success");
+    $("#account-register-form").reset();
+  } catch (error) {
+    setMessage(message, error.message);
+  } finally {
+    setLoading(button, false, "Отправить заявку");
+  }
+}
+
+async function logout() {
+  await api("/api/auth/logout", { method: "POST" }).catch(() => {});
+  state.user = null;
+  state.draft = null;
+  $("#auth-guest").classList.remove("hidden");
+  $("#connected-state").classList.add("hidden");
+  showLogin();
+  renderScheduleStatus({ connected: false, events: [] });
+  updateComposerState();
 }
 
 async function generate() {
   const button = $("#generate-button");
   const message = $("#plan-message");
   const sourceText = $("#source-text").value.trim();
-  if (!hasPlanningDetails(sourceText)) {
+  const guidingAnswers = collectGuidingAnswers();
+  if (!hasPlanningDetails(sourceText, guidingAnswers)) {
     setMessage(
       message,
-      "Добавь хотя бы одну конкретную задачу: что сделать, когда и примерно сколько времени это займёт.",
+      "Ответь хотя бы на один вопрос или добавь конкретную задачу в описание планов.",
       "error",
     );
     updateComposerState();
@@ -293,6 +433,7 @@ async function generate() {
         week_label: state.week.label,
         week_start: state.week.start,
         source_text: sourceText,
+        guiding_answers: guidingAnswers,
         include_schedule: $("#include-schedule").checked,
       }),
     });
@@ -332,6 +473,41 @@ async function applyCorrection() {
   }
 }
 
+async function balancePlan() {
+  const input = $("#correction-text");
+  input.value = "Сбалансируй нагрузку по дням: сохрани вебинары и явно заданные дни, не допускай больше 180 минут обычных задач в день и не дублируй задачи.";
+  await applyCorrection();
+}
+
+async function carryOver() {
+  const button = $("#carry-over");
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = "загружаю…";
+  try {
+    const result = await api("/api/plan/carry-over", {
+      method: "POST",
+      body: JSON.stringify({ week_label: state.week.label, week_start: state.week.start }),
+    });
+    if (!result.source_text) {
+      setMessage($("#plan-message"), `На неделе ${result.from_week} незавершённых задач не найдено.`, "success");
+      return;
+    }
+    const textarea = $("#source-text");
+    textarea.value = textarea.value.trim()
+      ? `${textarea.value.trim()}\n\n${result.source_text}`
+      : result.source_text;
+    updateComposerState();
+    setMessage($("#plan-message"), `Добавил ${result.tasks.length} задач из недели ${result.from_week}.`, "success");
+    textarea.focus();
+  } catch (error) {
+    setMessage($("#plan-message"), error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
+}
+
 async function confirmPlan() {
   const button = $("#confirm-button");
   const message = $("#confirm-message");
@@ -345,6 +521,9 @@ async function confirmPlan() {
     });
     $("#review-card").classList.add("hidden");
     $("#success-card").classList.remove("hidden");
+    $("#reflection-card").classList.remove("hidden");
+    $("#reflection-status").textContent = "Можно заполнить сразу или позже.";
+    $("#reflection-message").textContent = "";
     $("#success-copy").textContent = `Добавил строки в «${result.sheet_name}», начиная со строки ${result.start_row}.`;
     $("#sheet-link").href = result.spreadsheet_url;
     document.querySelectorAll(".step")[2].classList.remove("active");
@@ -357,10 +536,35 @@ async function confirmPlan() {
   }
 }
 
+async function generateReflection() {
+  const button = $("#generate-reflection");
+  const message = $("#reflection-message");
+  if (!state.draft) return;
+  setMessage(message);
+  setLoading(button, true, "Сгенерировать и записать");
+  try {
+    const result = await api("/api/reflection/generate", {
+      method: "POST",
+      body: JSON.stringify({
+        week_label: state.draft.week_label,
+        draft: state.draft,
+        notes: $("#reflection-notes").value.trim(),
+      }),
+    });
+    $("#reflection-status").textContent = result.reflection;
+    setMessage(message, "Рефлексия записана в Google Sheets.", "success");
+  } catch (error) {
+    setMessage(message, error.message);
+  } finally {
+    setLoading(button, false, "Сгенерировать и записать");
+  }
+}
+
 function startOver() {
   state.draft = null;
   $("#review-card").classList.add("hidden");
   $("#success-card").classList.add("hidden");
+  $("#reflection-card").classList.add("hidden");
   $("#source-text").focus();
   document.querySelectorAll(".step").forEach((step, index) => step.classList.toggle("active", index === (state.user ? 1 : 0)));
 }
@@ -374,9 +578,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     setMessage($("#plan-message"), error.message);
   }
 
-  $("#register-form").addEventListener("submit", (event) => { event.preventDefault(); register(); });
+  $("#login-form").addEventListener("submit", (event) => { event.preventDefault(); login(); });
+  $("#account-register-form").addEventListener("submit", (event) => { event.preventDefault(); registerAccount(); });
+  $("#show-register").addEventListener("click", showRegistration);
+  $("#show-login").addEventListener("click", showLogin);
+  $("#logout").addEventListener("click", logout);
   $("#source-text").addEventListener("input", updateComposerState);
+  document.querySelectorAll("[data-guiding-answer]").forEach((input) => input.addEventListener("input", updateComposerState));
   $("#generate-button").addEventListener("click", generate);
+  $("#carry-over").addEventListener("click", carryOver);
   $("#connect-skyeng").addEventListener("click", connectSkyeng);
   $("#sync-schedule").addEventListener("click", () => loadSchedule(true));
   $("#week-date").addEventListener("change", (event) => setSelectedWeek(event.target.value));
@@ -399,10 +609,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
   $("#apply-correction").addEventListener("click", applyCorrection);
+  $("#balance-plan").addEventListener("click", balancePlan);
   $("#confirm-button").addEventListener("click", confirmPlan);
+  $("#generate-reflection").addEventListener("click", generateReflection);
   $("#new-plan").addEventListener("click", startOver);
   $("#another-plan").addEventListener("click", startOver);
-  $("#change-profile").addEventListener("click", showRegistration);
   $("#add-goal").addEventListener("click", () => {
     state.draft = collectDraft();
     if (state.draft.goals.length >= 6) return;
@@ -413,7 +624,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   $("#add-task").addEventListener("click", () => {
     state.draft = collectDraft();
-    state.draft.tasks.push({ sphere: state.config.spheres[0], task: "", day: state.config.days[0], time_minutes: null });
+    state.draft.tasks.push({ sphere: state.config.spheres[0], text: "", day: state.config.days[0], time_minutes: null });
     renderDraft(state.draft);
     const tasks = document.querySelectorAll("[data-task-text]");
     tasks[tasks.length - 1].focus();
@@ -432,7 +643,48 @@ document.addEventListener("DOMContentLoaded", async () => {
     state.draft.tasks.splice(Number(button.dataset.deleteTask), 1);
     renderDraft(state.draft);
   });
-  document.querySelectorAll("[data-insert]").forEach((button) => button.addEventListener("click", () => insertPrompt(button.dataset.insert)));
+  $("#task-list").addEventListener("dragstart", (event) => {
+    const row = event.target.closest("[data-task-index]");
+    if (!row) return;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", row.dataset.taskIndex);
+    row.classList.add("dragging");
+  });
+  $("#task-list").addEventListener("dragend", (event) => {
+    const row = event.target.closest("[data-task-index]");
+    if (row) row.classList.remove("dragging");
+    document.querySelectorAll(".day-dropzone.drag-over").forEach((zone) => zone.classList.remove("drag-over"));
+  });
+  $("#task-list").addEventListener("dragover", (event) => {
+    const zone = event.target.closest("[data-day-drop]");
+    if (!zone) return;
+    event.preventDefault();
+    zone.classList.add("drag-over");
+  });
+  $("#task-list").addEventListener("dragleave", (event) => {
+    const zone = event.target.closest("[data-day-drop]");
+    if (zone && !zone.contains(event.relatedTarget)) zone.classList.remove("drag-over");
+  });
+  $("#task-list").addEventListener("drop", (event) => {
+    const zone = event.target.closest("[data-day-drop]");
+    if (!zone) return;
+    event.preventDefault();
+    const index = event.dataTransfer.getData("text/plain");
+    const row = document.querySelector(`[data-task-index="${index}"]`);
+    if (!row) return;
+    const empty = zone.querySelector(".empty-day");
+    if (empty) empty.remove();
+    zone.appendChild(row);
+    zone.classList.remove("drag-over");
+    updateDayLoads();
+    refreshTaskWarnings();
+  });
+  $("#task-list").addEventListener("input", (event) => {
+    if (event.target.matches("[data-task-time], [data-task-text]")) {
+      updateDayLoads();
+      refreshTaskWarnings();
+    }
+  });
   if (state.user) loadSchedule();
   else renderScheduleStatus({ connected: false, events: [] });
   updateComposerState();

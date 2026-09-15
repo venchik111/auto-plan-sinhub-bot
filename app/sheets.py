@@ -136,5 +136,55 @@ class SheetsRepository:
             raise SheetsError(f"Google Sheets API: HTTP {exc.resp.status}") from exc
         return start_row
 
+    def read_week_rows(self, sheet_name: str, week_label: str) -> list[dict[str, str]]:
+        escaped_name = sheet_name.replace("'", "''")
+        try:
+            values = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id,
+                range=f"'{escaped_name}'!A:G",
+            ).execute().get("values", [])
+        except HttpError as exc:
+            raise SheetsError(f"Google Sheets API: HTTP {exc.resp.status}") from exc
+        result: list[dict[str, str]] = []
+        for row in values[1:]:
+            cells = [str(row[index]).strip() if index < len(row) else "" for index in range(7)]
+            if cells[0] != week_label:
+                continue
+            result.append(
+                {
+                    "sphere": cells[2],
+                    "task": cells[3],
+                    "day": cells[4],
+                    "status": cells[5],
+                    "reflection": cells[6],
+                }
+            )
+        return result
+
+    def update_reflection(self, sheet_name: str, week_label: str, reflection: str) -> None:
+        escaped_name = sheet_name.replace("'", "''")
+        try:
+            values = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id,
+                range=f"'{escaped_name}'!A:G",
+            ).execute().get("values", [])
+        except HttpError as exc:
+            raise SheetsError(f"Google Sheets API: HTTP {exc.resp.status}") from exc
+        row_number = next(
+            (index for index, row in enumerate(values[1:], start=2) if row and str(row[0]).strip() == week_label),
+            None,
+        )
+        if row_number is None:
+            raise SheetsError("Не нашёл неделю в персональной вкладке Google Sheets.")
+        try:
+            self.service.spreadsheets().values().update(
+                spreadsheetId=self.spreadsheet_id,
+                range=f"'{escaped_name}'!G{row_number}",
+                valueInputOption="USER_ENTERED",
+                body={"values": [[reflection.strip()]]},
+            ).execute()
+        except HttpError as exc:
+            raise SheetsError(f"Google Sheets API: HTTP {exc.resp.status}") from exc
+
     def spreadsheet_url(self) -> str:
         return f"https://docs.google.com/spreadsheets/d/{self.spreadsheet_id}/edit"

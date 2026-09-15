@@ -28,6 +28,8 @@ class Settings:
     curator_password: str = ""
     opencode_review_agent: str = "reviewer"
     curator_students: tuple[str, ...] = ()
+    admin_password: str = ""
+    opencode_reflection_agent: str = "reflection"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -112,4 +114,12 @@ class Settings:
                 for student in os.getenv("CURATOR_STUDENTS", "").split(",")
                 if student.strip()
             ),
+            admin_password=(
+                os.getenv("ADMIN_PASSWORD", "").strip()
+                or os.getenv("CURATOR_PASSWORD", "").strip()
+            ),
+            opencode_reflection_agent=os.getenv(
+                "OPENCODE_REFLECTION_AGENT", "reflection"
+            ).strip()
+            or "reflection",
         )

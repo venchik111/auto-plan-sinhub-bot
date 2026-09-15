@@ -64,9 +64,10 @@ def test_parse_weekly_response_reads_lessons_and_live_events() -> None:
     assert events[1].event_type == "webinar"
     rendered = render_schedule(events)
     assert "14.09 (Пн):" in rendered
-    assert "13:15–14:50 — Python-разработка: Практика [практика; выполнить на платформе]" in rendered
+    assert "13:15–14:50 — Python-разработка: Практика [домашка; выполнить в ЛК; не больше 60 мин]" in rendered
     assert "РАСПИСАНИЕ SKYENG — ОНЛАЙН-ПЛАТФОРМА" in rendered
-    assert "онлайн-созвоны внутри Skyeng" in rendered
+    assert "платформа Skyeng = ЛК" in rendered
+    assert "вебинары внутри Skyeng" in rendered
 
 
 def test_parse_weekly_response_deduplicates_events() -> None:
@@ -100,6 +101,14 @@ def test_render_schedule_distinguishes_same_title_by_activity_type() -> None:
         ]
     )
 
-    assert "[урок; выполнить на платформе]" in rendered
-    assert "[практика; выполнить на платформе]" in rendered
-    assert "онлайн-созвон на платформе" not in rendered
+    assert "[урок; выполнить в ЛК; ориентир 20 мин]" in rendered
+    assert "[домашка; выполнить в ЛК; не больше 60 мин]" in rendered
+    assert "созвон" not in rendered
+
+
+def test_render_schedule_uses_trainer_slang_and_time_hint() -> None:
+    rendered = render_schedule(
+        [ScheduleEvent("2026-09-16", "13:15", "14:50", "9.2 Основы Git", "trainer", "Python")]
+    )
+
+    assert "подготовка к тесту в тренажере; выполнить в ЛК; ориентир 60 мин" in rendered

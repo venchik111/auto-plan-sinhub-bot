@@ -40,23 +40,38 @@
         <aside class="sidebar">
           <div class="card profile-card" id="profile-card">
             <div class="card-kicker">ПОДКЛЮЧЕНИЕ</div>
-            <h2>Куда записывать план?</h2>
-            <p class="muted">Вставь ФИО ровно как оно написано в названии персональной вкладки Google Sheets.</p>
-            <form id="register-form">
-              <label for="display-name">Название листа</label>
-              <div class="input-with-button">
-                <input id="display-name" name="display_name" autocomplete="off" placeholder="Фамилия Имя Отчество" required>
-                <button class="icon-button" type="submit" aria-label="Подключить лист">→</button>
-              </div>
-              <div class="form-message" id="register-message" role="status"></div>
-            </form>
+            <div id="auth-guest">
+              <h2>Войди в аккаунт</h2>
+              <p class="muted">После одобрения администратора здесь сохранятся твой лист, ответы и авторизация Skyeng.</p>
+              <form id="login-form">
+                <label for="login">Логин</label>
+                <input id="login" name="login" autocomplete="username" placeholder="например, ivan.petrov" required>
+                <label for="login-password">Пароль</label>
+                <input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="Пароль" required>
+                <button class="primary-button auth-button" type="submit"><span>Войти</span><b>↗</b></button>
+                <div class="form-message" id="login-message" role="status"></div>
+              </form>
+              <button class="text-button auth-switch" id="show-register" type="button">Создать аккаунт</button>
+
+              <form id="account-register-form" class="hidden">
+                <label for="register-login">Логин</label>
+                <input id="register-login" name="login" autocomplete="username" placeholder="например, ivan.petrov" required>
+                <label for="register-password">Пароль</label>
+                <input id="register-password" name="password" type="password" autocomplete="new-password" placeholder="минимум 6 символов" required>
+                <label for="display-name">ФИО как в названии листа</label>
+                <input id="display-name" name="display_name" autocomplete="name" placeholder="Фамилия Имя Отчество" required>
+                <button class="primary-button auth-button" type="submit"><span>Отправить заявку</span><b>→</b></button>
+                <div class="form-message" id="register-message" role="status"></div>
+                <button class="text-button auth-switch" id="show-login" type="button">Уже есть аккаунт</button>
+              </form>
+            </div>
             <div class="connected-state hidden" id="connected-state">
               <div class="connected-icon">✓</div>
               <div>
                 <strong id="connected-name">—</strong>
                 <span>лист подключён</span>
               </div>
-              <button class="text-button" id="change-profile" type="button">изменить</button>
+              <button class="text-button" id="logout" type="button">выйти</button>
             </div>
           </div>
 
@@ -83,6 +98,7 @@
                   <button class="week-arrow" id="next-week" type="button" aria-label="Следующая неделя">→</button>
                 </div>
                 <small class="week-range" id="week-range">—</small>
+                <button class="small-button carry-over-button" id="carry-over" type="button">подтянуть хвосты прошлой недели</button>
               </div>
             </div>
 
@@ -100,14 +116,26 @@
 
             <div class="question-block">
               <div class="question-head">
-                <span>Не знаешь, с чего начать?</span>
-                <small>нажми на подсказку</small>
+                <span>Ответь на несколько вопросов</span>
+                <small>ответы помогут собрать более точный черновик</small>
               </div>
               <div class="question-grid">
-                <button type="button" class="question-chip" data-insert="Главный результат: "><b>Главный результат</b><span>что должно быть готово?</span></button>
-                <button type="button" class="question-chip" data-insert="Фиксированные дела: "><b>Фиксированные дела</b><span>вебинары, встречи, тренировки</span></button>
-                <button type="button" class="question-chip" data-insert="Ресурс и время: "><b>Ресурс и время</b><span>сколько сил и часов есть?</span></button>
-                <button type="button" class="question-chip" data-insert="Не забыть: "><b>Не забыть</b><span>что переносится дальше?</span></button>
+                <label class="planning-question" for="question-goal">
+                  <span>Что должно быть готово к концу недели?</span>
+                  <textarea id="question-goal" data-guiding-answer="goal" rows="2" maxlength="800" placeholder="Например: закрыть модуль по Python"></textarea>
+                </label>
+                <label class="planning-question" for="question-fixed">
+                  <span>Какие дела и события обязательны?</span>
+                  <textarea id="question-fixed" data-guiding-answer="fixed" rows="2" maxlength="800" placeholder="Например: вебинар в среду, тренировка в субботу"></textarea>
+                </label>
+                <label class="planning-question" for="question-capacity">
+                  <span>Сколько времени и сил у тебя есть?</span>
+                  <textarea id="question-capacity" data-guiding-answer="capacity" rows="2" maxlength="800" placeholder="Например: по часу вечером, в среду занят"></textarea>
+                </label>
+                <label class="planning-question" for="question-carry-over">
+                  <span>Что нельзя забыть или нужно перенести?</span>
+                  <textarea id="question-carry-over" data-guiding-answer="carry_over" rows="2" maxlength="800" placeholder="Например: перенести непройденную домашку"></textarea>
+                </label>
               </div>
             </div>
 
@@ -134,7 +162,7 @@
             </div>
 
             <div class="tasks-section">
-              <div class="section-title"><span>Задачи по дням</span><button class="small-button" id="add-task" type="button">+ добавить задачу</button></div>
+              <div class="section-title"><span>Задачи по дням</span><div class="section-actions"><button class="small-button" id="balance-plan" type="button">сбалансировать</button><button class="small-button" id="add-task" type="button">+ добавить задачу</button></div></div>
               <div class="task-list" id="task-list"></div>
             </div>
 
@@ -164,6 +192,18 @@
               <a id="sheet-link" href="#" target="_blank" rel="noreferrer">Открыть Google Sheets ↗</a>
             </div>
             <button class="secondary-button" id="another-plan" type="button">Сделать ещё один</button>
+          </div>
+
+          <div class="card reflection-card hidden" id="reflection-card">
+            <div class="card-kicker">ПОСЛЕ НЕДЕЛИ</div>
+            <h2>Заполнить рефлексию</h2>
+            <p class="muted">Добавь пару заметок по желанию — я сверю их со статусами задач и запишу короткий итог в колонку "Рефлексия".</p>
+            <textarea id="reflection-notes" rows="4" maxlength="4000" placeholder="Например: успел пройти два урока, домашку по Git перенёс из-за нагрузки..."></textarea>
+            <div class="reflection-foot">
+              <span id="reflection-status">Можно заполнить сразу или позже.</span>
+              <button class="secondary-button" id="generate-reflection" type="button"><span>Сгенерировать и записать</span></button>
+            </div>
+            <div class="form-message" id="reflection-message" role="status"></div>
           </div>
         </section>
       </section>
