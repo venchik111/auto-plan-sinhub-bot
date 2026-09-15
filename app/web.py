@@ -90,7 +90,7 @@ async def _watch_skyeng_auth(
         output = (stderr or stdout).decode("utf-8", "replace").strip()
         if "TargetClosedError" in output or "target, context or browser has been closed" in output:
             message = "Окно входа Skyeng закрыли до завершения авторизации."
-        elif "Executable doesn't exist" in output:
+        elif "executable doesn't exist" in output.lower():
             message = "Не найден браузер для окна входа Skyeng."
         else:
             message = "Не удалось завершить подключение Skyeng. Попробуй ещё раз."
