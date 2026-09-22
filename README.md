@@ -149,10 +149,20 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 Запусти веб-версию и нажми **«подключить»** рядом с расписанием:
 
 ```bash
-./.venv/bin/uvicorn app.web:app --host 0.0.0.0 --port 8000
+./start-site.sh
 ```
 
 Открой [http://localhost:8000](http://localhost:8000), введи ФИО ровно как в названии вкладки Google Sheets и пройди вход в открывшемся окне Skyeng.
+
+Для управления сайтом:
+
+```bash
+./start-site.sh          # запустить и открыть сайт
+./start-site.sh status   # проверить состояние
+./start-site.sh logs     # смотреть логи
+./start-site.sh restart  # перезапустить
+./start-site.sh stop     # остановить
+```
 
 Новый пользователь сначала создаёт аккаунт и указывает ФИО вкладки. Заявка появляется на странице [http://localhost:8000/admin](http://localhost:8000/admin); после одобрения студент может войти. Если `ADMIN_PASSWORD` не задан, для локальной совместимости используется `CURATOR_PASSWORD`.
 

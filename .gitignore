@@ -1,4 +1,6 @@
 .env
+.auto-plan-web.pid
+.auto-plan-web.log
 *.db
 *.sqlite3
 *.log
