@@ -29,6 +29,11 @@ def test_extract_json_handles_markdown_and_extra_text() -> None:
     assert extract_json('Ответ: {"x": {"y": 2}} спасибо') == '{"x": {"y": 2}}'
 
 
+def test_http_content_accepts_text_blocks() -> None:
+    data = {"choices": [{"message": {"content": [{"type": "text", "text": '{"ok": true}'}]}}]}
+    assert OpenAICompatibleLLM._extract_content(data) == '{"ok": true}'
+
+
 class ScriptedRunner(OpenCodeRunner):
     def __init__(self, answers: dict[str, object], tmp_path) -> None:
         super().__init__("opencode", "planner", tuple(answers), 5, tmp_path)

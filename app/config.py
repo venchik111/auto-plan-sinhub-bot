@@ -74,9 +74,16 @@ class Settings:
                 "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
             ).rstrip("/")
             opencode_models = ()
+        elif llm_provider == "openai":
+            llm_api_key = required("OPENAI_API_KEY")
+            llm_model = os.getenv("OPENAI_MODEL", "gpt-5").strip()
+            llm_base_url = os.getenv(
+                "OPENAI_BASE_URL", "https://api.openai.com/v1"
+            ).rstrip("/")
+            opencode_models = ()
         else:
             raise RuntimeError(
-                "LLM_PROVIDER должен быть opencode или openrouter"
+                "LLM_PROVIDER должен быть opencode, openrouter или openai"
             )
 
         if not llm_model:

@@ -143,7 +143,7 @@ function taskRowHtml(task, index) {
     <div class="task-row" data-task-index="${index}" draggable="true">
       <span class="drag-handle" title="Перетащи задачу в другой день" aria-label="Перетащить задачу">⠿</span>
       <select data-task-sphere aria-label="Сфера">${selectOptions(state.config.spheres, sphere)}</select>
-      <input data-task-text value="${escapeHtml(text)}" maxlength="300" aria-label="Задача">
+      <textarea data-task-text rows="2" maxlength="300" aria-label="Задача">${escapeHtml(text)}</textarea>
       <input data-task-time type="number" min="1" max="1440" placeholder="мин" value="${escapeHtml(time)}" aria-label="Минуты">
       <button class="delete-button" type="button" data-delete-task="${index}" aria-label="Удалить задачу">×</button>
     </div>

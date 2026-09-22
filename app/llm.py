@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import uuid
 from typing import Any
 
@@ -37,6 +39,7 @@ SYSTEM_PROMPT = """
 * Обычную practice по уроку называй домашкой, а не практикой. Домашку планируй максимум на 60 минут; если точное время не указано, ставь 60 минут.
 * Активность trainer формулируй как "Подготовка к тесту в тренажере" и ставь 60 минут.
 * Не путай домашку с "практикой с наставником": практику с наставником и типы live/webinar называй вебинарами внутри ЛК с фиксированным временем.
+* Для webinar/live не пиши "Выполнить урок" или "Выполнить домашку": формулируй задачу как "Вебинар: <точное название> в ЛК". Не добавляй к названию случайные приставки или обрывки слов.
 * Переноси в текст задачи предмет и конкретное название активности из расписания, например: "Выполнить урок \"Оператор if.\" в ЛК по алгоритмам".
 * Для онлайн-активностей используй день и время слота как ориентир, но не считай слот недоступностью студента и не блокируй рядом весь день. Для вебинара используй фактическую длительность слота.
 * Каждый слот расписания — отдельная активность. Если у одного модуля есть урок и домашка, сохрани обе задачи и укажи вид активности, чтобы они не выглядели дублями. Один и тот же слот не дублируй.
@@ -96,11 +99,44 @@ class OpenAICompatibleLLM:
                 {"role": "user", "content": user_prompt},
             ],
             "temperature": 0.2,
-            "max_tokens": 1800,
+            # A full week with imported Skyeng lessons can contain many
+            # separate tasks.  Keep enough room for the complete JSON object;
+            # otherwise the provider may truncate it and json.loads reports a
+            # misleading generic plan-conversion error.
+            "max_tokens": 8000,
             "response_format": {"type": "json_object"},
         }
-        data = await self._request_http(payload, session_id=session_id)
-        return self._parse_plan(self._extract_content(data), week_label)
+        last_error: LLMError | None = None
+        models = [self.model]
+        if self.provider == "openrouter" and self.model == "openrouter/free":
+            fallback_models = os.getenv(
+                "OPENROUTER_FALLBACK_MODELS",
+                "inclusionai/ling-3.0-flash-fin:free,"
+                "liquid/lfm-2.5-2.6b:free,"
+                "nvidia/nemotron-3-super-120b-a12b:free",
+            )
+            models.extend(model.strip() for model in fallback_models.split(",") if model.strip())
+
+        for model in models:
+            for attempt in range(2):
+                try:
+                    request_payload = {**payload, "model": model}
+                    if attempt == 1:
+                        # Some free OpenRouter providers occasionally return an
+                        # empty or non-JSON message when response_format is set.
+                        request_payload.pop("response_format", None)
+                    data = await self._request_http(request_payload, session_id=session_id)
+                    return self._parse_plan(self._extract_content(data), week_label)
+                except LLMError as exc:
+                    last_error = exc
+                    if self._is_daily_free_limit(exc):
+                        raise
+                    if attempt == 0 and self._should_retry_http_error(exc):
+                        await asyncio.sleep(0.6)
+                        continue
+                    break
+        assert last_error is not None
+        raise last_error
 
     async def _generate_with_opencode(self, prompt: str, week_label: str) -> PlanDraft:
         draft, _ = await self.opencode.run_with_fallback(
@@ -175,7 +211,9 @@ class OpenAICompatibleLLM:
             f"Неделя: {week_label}\n"
             f"Текущий черновик:\n{current_draft.to_json()}\n\n"
             f"Правка пользователя:\n{correction or source_text}\n"
-            "Верни полный обновлённый объект, а не только изменённые поля."
+            "Верни полный обновлённый объект, а не только изменённые поля. "
+            "Сохрани все существующие задачи, если правка явно их не меняет. "
+            "Не добавляй пояснения вне JSON и не дублируй задачи."
         )
 
     async def _request_http(
@@ -204,6 +242,11 @@ class OpenAICompatibleLLM:
                 )
         if response.is_error:
             detail = response.text[:500]
+            if response.status_code == 429 and "free-models-per-day" in detail:
+                raise LLMError(
+                    "Дневной лимит бесплатных моделей OpenRouter исчерпан. "
+                    "Попробуй снова после 03:00 по Москве или подключи другой бесплатный LLM-провайдер."
+                )
             raise LLMError(
                 f"Провайдер {self.provider} вернул HTTP {response.status_code}: {detail}"
             )
@@ -224,11 +267,40 @@ class OpenAICompatibleLLM:
             ) from exc
 
     @staticmethod
+    def _should_retry_http_error(error: LLMError) -> bool:
+        message = str(error).lower()
+        if OpenAICompatibleLLM._is_daily_free_limit(error):
+            return False
+        return any(
+            marker in message
+            for marker in (
+                "пустой ответ",
+                "не удалось превратить",
+                "http 429",
+                "http 500",
+                "http 502",
+                "http 503",
+                "http 504",
+            )
+        )
+
+    @staticmethod
+    def _is_daily_free_limit(error: LLMError) -> bool:
+        message = str(error).lower()
+        return "free-models-per-day" in message or "дневной лимит бесплатных моделей" in message
+
+    @staticmethod
     def _extract_content(data: dict[str, Any]) -> str:
         try:
             content = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise LLMError("В ответе провайдера нет текста модели.") from exc
+        if isinstance(content, list):
+            content = "\n".join(
+                part.get("text", "")
+                for part in content
+                if isinstance(part, dict) and isinstance(part.get("text"), str)
+            )
         if not isinstance(content, str) or not content.strip():
             raise LLMError("Модель вернула пустой ответ.")
         return content.strip()
