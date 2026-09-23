@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=20260922">
 </head>
 <body>
   <div class="ambient ambient-one"></div>
@@ -108,6 +108,38 @@
                 <button class="small-button hidden" id="connect-skyeng" type="button">подключить</button>
                 <button class="small-button" id="sync-schedule" type="button">обновить</button>
               </div>
+            </div>
+            <div class="skyeng-connect-panel hidden" id="skyeng-connect-panel">
+              <div class="skyeng-connect-head">
+                <span class="skyeng-connect-mark" aria-hidden="true">↗</span>
+                <div>
+                  <span class="skyeng-kicker">SKYENG · БЫСТРОЕ ПОДКЛЮЧЕНИЕ</span>
+                  <strong>Подключи своё расписание</strong>
+                  <p class="skyeng-connect-copy">Войди через логин и пароль — мы сохраним только сессию, не сам пароль.</p>
+                </div>
+              </div>
+              <div class="skyeng-login-fields">
+                <input id="skyeng-login" type="text" autocomplete="username" aria-label="Логин или email Skyeng" placeholder="Логин или email Skyeng">
+                <input id="skyeng-password" type="password" autocomplete="current-password" aria-label="Пароль Skyeng" placeholder="Пароль Skyeng">
+              </div>
+              <div class="skyeng-security-note"><span aria-hidden="true">✓</span><span>Пароль нужен только для входа и сразу забывается после проверки. Если появится «Я не робот», используй Cookie ниже.</span></div>
+              <div class="skyeng-connect-actions">
+                <button class="secondary-button" id="cancel-skyeng-connect" type="button">отмена</button>
+                <button class="primary-button" id="save-skyeng-connect" type="button">проверить и подключить</button>
+              </div>
+              <details class="skyeng-cookie-help">
+                <summary>Не получается войти? Подключи через Cookie</summary>
+                <div class="skyeng-cookie-body">
+                  <ol>
+                    <li>Открой <a href="https://avatar.skyeng.ru/student/schedule" target="_blank" rel="noopener noreferrer">расписание Skyeng</a> и войди в аккаунт.</li>
+                    <li>Нажми F12 → Network, обнови страницу и открой запрос <code>timetable/weekly</code>.</li>
+                    <li>В Request Headers скопируй значение заголовка <code>Cookie</code> и вставь ниже.</li>
+                  </ol>
+                  <textarea id="skyeng-cookie" rows="4" maxlength="30000" autocomplete="off" spellcheck="false" placeholder="Cookie из запроса timetable/weekly"></textarea>
+                  <small class="skyeng-cookie-note">Cookie хранится только на сервере для твоего аккаунта. На публичном сайте используй только HTTPS.</small>
+                </div>
+              </details>
+              <div class="form-message" id="skyeng-connect-message" aria-live="polite"></div>
             </div>
             <label class="schedule-option" for="include-schedule">
               <input id="include-schedule" type="checkbox" checked>
@@ -211,6 +243,6 @@
 
     <footer><span>авто-планирование</span><span>твоя неделя · твои правила</span></footer>
   </div>
-  <script src="/static/app.js" defer></script>
+  <script src="/static/app.js?v=20260922" defer></script>
 </body>
 </html>

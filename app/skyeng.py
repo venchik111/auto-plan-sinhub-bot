@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import html
 import json
+import os
 import re
 from dataclasses import asdict, dataclass
 from datetime import date
@@ -11,6 +13,8 @@ import httpx
 
 
 SKYENG_TIMETABLE_URL = "https://edu-avatar.skyeng.ru/api/v1/college-student-cabinet/timetable/weekly"
+SKYENG_AUTH_START_URL = "https://edu-avatar.skyeng.ru/auth-external/connect/central-university/login"
+SKYENG_RETURN_URL = "https://avatar.skyeng.ru/student/schedule"
 
 
 SUBJECT_LABELS = {
@@ -51,6 +55,118 @@ class SkyengError(RuntimeError):
 
 class SkyengAuthError(SkyengError):
     pass
+
+
+def parse_skyeng_cookie_input(value: str) -> dict[str, Any]:
+    """Convert a Cookie header or exported browser JSON to storage-state JSON."""
+    source = value.strip()
+    if not source:
+        raise SkyengAuthError("Вставь Cookie из запроса расписания Skyeng.")
+
+    cookies: list[dict[str, Any]] = []
+    try:
+        parsed = json.loads(source)
+    except json.JSONDecodeError:
+        parsed = None
+
+    if isinstance(parsed, dict):
+        raw_cookies = parsed.get("cookies", [])
+    elif isinstance(parsed, list):
+        raw_cookies = parsed
+    else:
+        raw_cookies = None
+
+    if isinstance(raw_cookies, list):
+        for item in raw_cookies:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            cookie_value = str(item.get("value") or "")
+            domain = str(item.get("domain") or ".skyeng.ru").strip()
+            if not name or "skyeng.ru" not in domain.lower():
+                continue
+            cookies.append(
+                {
+                    "name": name,
+                    "value": cookie_value,
+                    "domain": domain,
+                    "path": str(item.get("path") or "/"),
+                }
+            )
+    else:
+        if source.lower().startswith("cookie:"):
+            source = source.split(":", 1)[1].strip()
+        for part in source.split(";"):
+            name, separator, cookie_value = part.strip().partition("=")
+            if not separator or not name or any(char.isspace() for char in name):
+                continue
+            cookies.append(
+                {
+                    "name": name,
+                    "value": cookie_value,
+                    "domain": ".skyeng.ru",
+                    "path": "/",
+                }
+            )
+
+    unique = {item["name"]: item for item in cookies}
+    if not unique:
+        raise SkyengAuthError(
+            "Не удалось найти cookies Skyeng. Скопируй целиком значение заголовка Cookie."
+        )
+    return {"cookies": list(unique.values()), "origins": []}
+
+
+def save_skyeng_cookie_state(path: Path, value: str) -> None:
+    save_skyeng_state(path, parse_skyeng_cookie_input(value))
+
+
+def save_skyeng_state(path: Path, state: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(state, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    os.chmod(path, 0o600)
+
+
+def _login_action(page: str) -> str | None:
+    match = re.search(
+        r'window\.authConfiguration\.urls\.loginAction\s*=\s*"([^"]+)"',
+        page,
+    )
+    return html.unescape(match.group(1)) if match else None
+
+
+def _is_captcha_challenge(response: httpx.Response) -> bool:
+    """Detect the anti-bot page returned instead of the Skyeng login form."""
+    url = str(response.url).lower()
+    page = response.text.lower()
+    return (
+        "showcaptcha" in url
+        or "smartcaptcha" in page
+        or "вы не робот" in page
+    )
+
+
+def _skyeng_cookie_state(client: httpx.AsyncClient) -> dict[str, Any]:
+    cookies = []
+    for cookie in client.cookies.jar:
+        domain = str(cookie.domain or "")
+        if "skyeng.ru" not in domain.lower():
+            continue
+        cookies.append(
+            {
+                "name": cookie.name,
+                "value": cookie.value,
+                "domain": domain or ".skyeng.ru",
+                "path": cookie.path or "/",
+            }
+        )
+    unique = {item["name"]: item for item in cookies}
+    if not unique:
+        raise SkyengAuthError("Skyeng не вернул сессию после входа.")
+    return {"cookies": list(unique.values()), "origins": []}
 
 
 @dataclass(frozen=True)
@@ -233,8 +349,7 @@ class SkyengScheduleClient:
     def _cookies(self) -> httpx.Cookies:
         if not self.storage_state_file.is_file():
             raise SkyengAuthError(
-                "Авторизация Skyeng не подключена. Запусти: "
-                "python -m app.skyeng_login"
+                "Авторизация Skyeng не подключена. Вставь Cookie через форму на сайте."
             )
         try:
             state = json.loads(self.storage_state_file.read_text(encoding="utf-8"))
@@ -254,6 +369,57 @@ class SkyengScheduleClient:
                 path=str(item.get("path") or "/"),
             )
         return cookies
+
+    @staticmethod
+    async def login_with_password(login: str, password: str) -> dict[str, Any]:
+        """Complete Skyeng's external login flow and return only its session cookies."""
+        login = login.strip()
+        if not login or not password:
+            raise SkyengAuthError("Укажи логин или email и пароль Skyeng.")
+        try:
+            async with httpx.AsyncClient(
+                timeout=30,
+                follow_redirects=True,
+                headers={"User-Agent": "AutoPlan/1.0"},
+            ) as client:
+                response = await client.get(
+                    SKYENG_AUTH_START_URL,
+                    params={"returnUrl": SKYENG_RETURN_URL},
+                )
+                action = _login_action(response.text)
+                if not action:
+                    raise SkyengAuthError("Не удалось открыть форму входа Skyeng.")
+
+                response = await client.post(action, data={"username": login})
+                if _is_captcha_challenge(response):
+                    raise SkyengAuthError(
+                        "Skyeng включил проверку «Я не робот». Вход паролем через сервер "
+                        "сейчас недоступен — войди в Skyeng в браузере и подключи расписание "
+                        "через Cookie."
+                    )
+                action = _login_action(response.text)
+                if not action:
+                    raise SkyengAuthError(
+                        "Skyeng не открыл следующий шаг входа. Используй подключение через Cookie."
+                    )
+                if not re.search(r'name=["\']password["\']|activePage\s*=\s*["\']password', response.text, re.I):
+                    raise SkyengAuthError(
+                        "Skyeng запросил код подтверждения. Используй вход на Skyeng и вставь Cookie."
+                    )
+
+                response = await client.post(
+                    action,
+                    data={"username": login, "password": password, "credentialId": ""},
+                )
+                if response.status_code >= 400:
+                    raise SkyengAuthError("Skyeng отклонил логин или пароль.")
+                if _login_action(response.text):
+                    raise SkyengAuthError("Skyeng отклонил логин или пароль.")
+                return _skyeng_cookie_state(client)
+        except SkyengAuthError:
+            raise
+        except httpx.HTTPError as exc:
+            raise SkyengError("Не удалось связаться со Skyeng для входа.") from exc
 
     async def fetch_week(self, start: date, end: date) -> list[ScheduleEvent]:
         cookies = self._cookies()

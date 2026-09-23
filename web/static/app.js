@@ -25,9 +25,16 @@ function setMessage(element, text = "", kind = "") {
 }
 
 function setLoading(button, loading, label) {
+  if (!button) return;
   button.disabled = loading;
   button.classList.toggle("loading", loading);
-  if (label) button.querySelector("span").textContent = loading ? "Подожди…" : label;
+  if (!label) return;
+  const labelElement = button.querySelector("span");
+  if (labelElement) {
+    labelElement.textContent = loading ? "Подожди…" : label;
+  } else {
+    button.textContent = loading ? "Подожди…" : label;
+  }
 }
 
 function parseIsoDate(value) {
@@ -273,6 +280,8 @@ function renderScheduleStatus(schedule) {
   const status = $("#schedule-status");
   const button = $("#sync-schedule");
   const connectButton = $("#connect-skyeng");
+  const connectPanel = $("#skyeng-connect-panel");
+  const error = typeof schedule.error === "string" ? schedule.error : "";
   if (!state.user) {
     status.textContent = "Сначала войди в одобренный аккаунт";
     button.disabled = true;
@@ -281,22 +290,26 @@ function renderScheduleStatus(schedule) {
     return;
   }
   if (!schedule.connected) {
-    status.textContent = schedule.error || "нажми «подключить», чтобы войти в Skyeng";
+    status.textContent = error || "нажми «подключить», чтобы войти в Skyeng";
     button.disabled = true;
     connectButton.disabled = false;
     connectButton.classList.remove("hidden");
-  } else if (schedule.error) {
-    status.textContent = schedule.error;
+    connectPanel.classList.remove("hidden");
+  } else if (error) {
+    status.textContent = error;
     button.disabled = false;
     connectButton.classList.add("hidden");
+    connectPanel.classList.add("hidden");
   } else if (schedule.events.length) {
     status.textContent = `${schedule.events.length} активностей · обновляется раз в неделю`;
     button.disabled = false;
     connectButton.classList.add("hidden");
+    connectPanel.classList.add("hidden");
   } else {
     status.textContent = "активностей на эту неделю не найдено";
     button.disabled = false;
     connectButton.classList.add("hidden");
+    connectPanel.classList.add("hidden");
   }
 }
 
@@ -315,43 +328,58 @@ async function loadSchedule(force = false) {
       : await api(`/api/schedule?week=${encodeURIComponent(week.label)}&week_start=${encodeURIComponent(week.start)}`);
     renderScheduleStatus(result);
   } catch (error) {
-    $("#schedule-status").textContent = error.message;
-    button.disabled = false;
+    const authenticationFailed = /авторизац|подключи/i.test(error.message);
+    renderScheduleStatus({
+      connected: !authenticationFailed,
+      events: [],
+      error: error.message,
+    });
   }
 }
 
-async function waitForSkyengConnection() {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < 5 * 60 * 1000) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    const result = await api("/api/skyeng/status");
-    if (result.connected) {
-      await loadSchedule(true);
-      return;
-    }
-    if (result.status === "failed") {
-      throw new Error(result.error || "Окно входа Skyeng закрылось до завершения авторизации.");
-    }
-  }
-  throw new Error("Не дождался входа в Skyeng. Нажми «подключить» и попробуй ещё раз.");
+function connectSkyeng() {
+  const panel = $("#skyeng-connect-panel");
+  panel.classList.remove("hidden");
+  $("#skyeng-connect-message").textContent = "";
+  $("#skyeng-login").focus();
 }
 
-async function connectSkyeng() {
-  const button = $("#connect-skyeng");
-  const status = $("#schedule-status");
-  button.disabled = true;
-  status.textContent = "открываю окно входа Skyeng…";
+function closeSkyengConnect() {
+  $("#skyeng-connect-panel").classList.add("hidden");
+  $("#skyeng-connect-message").textContent = "";
+  $("#skyeng-login").value = "";
+  $("#skyeng-password").value = "";
+  $("#skyeng-cookie").value = "";
+}
+
+async function saveSkyengConnection() {
+  const button = $("#save-skyeng-connect");
+  const message = $("#skyeng-connect-message");
+  const login = $("#skyeng-login").value.trim();
+  const password = $("#skyeng-password").value;
+  const cookies = $("#skyeng-cookie").value.trim();
+  if ((login && !password) || (!login && password)) {
+    setMessage(message, "Заполни и логин, и пароль Skyeng.", "error");
+    return;
+  }
+  if (!login && !cookies) {
+    setMessage(message, "Введи логин и пароль или вставь Cookie.", "error");
+    return;
+  }
+  setMessage(message);
+  setLoading(button, true, "Подключаю…");
   try {
-    const result = await api("/api/skyeng/connect", { method: "POST" });
-    if (result.connected) {
-      await loadSchedule(true);
-    } else {
-      status.textContent = "войди в открывшемся окне Skyeng…";
-      await waitForSkyengConnection();
-    }
+    await api("/api/skyeng/connect", {
+      method: "POST",
+      body: JSON.stringify({ login, password, cookies, week_start: state.week.start }),
+    });
+    $("#skyeng-cookie").value = "";
+    closeSkyengConnect();
+    await loadSchedule(true);
   } catch (error) {
-    status.textContent = error.message;
-    button.disabled = false;
+    setMessage(message, error.message, "error");
+  } finally {
+    setLoading(button, false, "проверить и подключить");
   }
 }
 
@@ -588,6 +616,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("#generate-button").addEventListener("click", generate);
   $("#carry-over").addEventListener("click", carryOver);
   $("#connect-skyeng").addEventListener("click", connectSkyeng);
+  $("#cancel-skyeng-connect").addEventListener("click", closeSkyengConnect);
+  $("#save-skyeng-connect").addEventListener("click", saveSkyengConnection);
   $("#sync-schedule").addEventListener("click", () => loadSchedule(true));
   $("#week-date").addEventListener("change", (event) => setSelectedWeek(event.target.value));
   $("#previous-week").addEventListener("click", () => {

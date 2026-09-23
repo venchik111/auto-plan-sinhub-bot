@@ -1,4 +1,57 @@
-from app.skyeng import ScheduleEvent, parse_weekly_response, render_schedule
+import pytest
+import httpx
+
+from app.skyeng import (
+    ScheduleEvent,
+    SkyengAuthError,
+    _is_captcha_challenge,
+    _login_action,
+    parse_skyeng_cookie_input,
+    parse_weekly_response,
+    render_schedule,
+)
+
+
+def test_parse_skyeng_cookie_header() -> None:
+    state = parse_skyeng_cookie_input("Cookie: session=abc123; device_id=device-1")
+
+    assert state["origins"] == []
+    assert state["cookies"] == [
+        {"name": "session", "value": "abc123", "domain": ".skyeng.ru", "path": "/"},
+        {"name": "device_id", "value": "device-1", "domain": ".skyeng.ru", "path": "/"},
+    ]
+
+
+def test_parse_skyeng_cookie_json_filters_other_domains() -> None:
+    state = parse_skyeng_cookie_input(
+        '[{"name":"session","value":"abc","domain":".skyeng.ru"},'
+        '{"name":"foreign","value":"nope","domain":"example.com"}]'
+    )
+
+    assert [cookie["name"] for cookie in state["cookies"]] == ["session"]
+
+
+def test_parse_skyeng_cookie_rejects_empty_input() -> None:
+    with pytest.raises(SkyengAuthError, match="Вставь Cookie"):
+        parse_skyeng_cookie_input("  ")
+
+
+def test_extract_skyeng_login_action_unescapes_html() -> None:
+    page = 'window.authConfiguration.urls.loginAction = "https://id.example/auth?a=1&amp;b=2";'
+
+    assert _login_action(page) == "https://id.example/auth?a=1&b=2"
+
+
+def test_detect_skyeng_captcha_redirect() -> None:
+    response = httpx.Response(
+        200,
+        text="Вы не робот?",
+        request=httpx.Request(
+            "POST", "https://id.centraluniversity.ru/tmgrdfrend/showcaptcha"
+        ),
+    )
+
+    assert _is_captcha_challenge(response)
 
 
 def test_parse_weekly_response_reads_current_avatar_timetable() -> None:

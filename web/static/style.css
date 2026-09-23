@@ -109,6 +109,34 @@ button:disabled { cursor: not-allowed; opacity: .42; transform: none !important;
 .sync-icon { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 8px; color: #75699c; background: #e4def3; font-size: 16px; }
 .schedule-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; }
 .schedule-strip .small-button { flex: 0 0 auto; }
+.skyeng-connect-panel { position: relative; overflow: hidden; margin-top: 10px; padding: 20px; border: 1px solid #ded7ee; border-radius: 16px; background: linear-gradient(135deg, #fbfaff 0%, #f4f0fb 100%); box-shadow: 0 13px 30px rgba(93, 76, 132, .09); }
+.skyeng-connect-panel::after { position: absolute; top: -65px; right: -35px; width: 175px; height: 175px; border-radius: 50%; background: radial-gradient(circle, rgba(224, 214, 249, .75) 0%, rgba(224, 214, 249, 0) 68%); content: ""; pointer-events: none; }
+.skyeng-connect-head, .skyeng-login-fields, .skyeng-security-note, .skyeng-connect-actions, .skyeng-cookie-help, .skyeng-connect-panel > .form-message { position: relative; z-index: 1; }
+.skyeng-connect-head { display: flex; align-items: flex-start; gap: 12px; }
+.skyeng-connect-mark { display: grid; place-items: center; width: 35px; height: 35px; flex: 0 0 35px; border-radius: 11px; color: #fff; background: var(--ink); box-shadow: 0 5px 11px rgba(32, 30, 27, .14); font-size: 18px; line-height: 1; }
+.skyeng-kicker { display: block; color: #8876ae; font-size: 9px; font-weight: 800; letter-spacing: .13em; line-height: 1.2; }
+.skyeng-connect-head strong { display: block; margin-top: 4px; font-family: Manrope, Inter, sans-serif; font-size: 18px; letter-spacing: -.03em; }
+.skyeng-connect-copy { max-width: 520px; margin: 6px 0 15px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.skyeng-login-fields { display: grid; grid-template-columns: 1.2fr .8fr; gap: 9px; }
+.skyeng-login-fields input { padding: 12px 13px; border-color: #ded8ea; background: rgba(255, 255, 255, .78); font-size: 12px; }
+.skyeng-login-fields input:focus { border-color: #9c8bc5; box-shadow: 0 0 0 3px rgba(156, 139, 197, .14); }
+.skyeng-security-note { display: flex; align-items: center; gap: 7px; margin-top: 10px; padding: 8px 10px; border: 1px solid #d7e1d3; border-radius: 10px; color: #5d775b; background: rgba(224, 235, 220, .68); font-size: 10px; line-height: 1.35; }
+.skyeng-security-note > span:first-child { display: grid; place-items: center; width: 16px; height: 16px; flex: 0 0 16px; border-radius: 50%; color: #fff; background: #779671; font-size: 10px; font-weight: 800; }
+.skyeng-connect-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.skyeng-connect-actions button { padding: 10px 12px; font-size: 10px; }
+.skyeng-connect-actions .primary-button { padding-right: 15px; padding-left: 15px; border-radius: 9px; background: var(--ink); }
+.skyeng-connect-actions .primary-button:hover { background: var(--coral-dark); }
+.skyeng-cookie-help { margin-top: 15px; padding-top: 12px; border-top: 1px solid rgba(211, 203, 229, .85); }
+.skyeng-cookie-help summary { cursor: pointer; list-style: none; color: #75699c; font-size: 10px; font-weight: 700; }
+.skyeng-cookie-help summary::-webkit-details-marker { display: none; }
+.skyeng-cookie-help summary::after { float: right; color: #9c91b6; content: "+"; font-size: 16px; font-weight: 400; line-height: 10px; }
+.skyeng-cookie-help[open] summary::after { content: "−"; }
+.skyeng-cookie-body { margin-top: 11px; padding: 12px; border: 1px solid rgba(219, 212, 233, .9); border-radius: 11px; background: rgba(255, 255, 255, .58); }
+.skyeng-connect-panel ol { margin: 0 0 11px; padding-left: 18px; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.skyeng-connect-panel a { color: var(--coral-dark); }
+.skyeng-connect-panel code { padding: 1px 4px; border-radius: 4px; background: #eeeaf6; font-size: 9px; }
+.skyeng-connect-panel textarea { min-height: 82px; padding: 10px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10px; line-height: 1.4; }
+.skyeng-cookie-note { display: block; margin-top: 7px; color: var(--muted); font-size: 9px; line-height: 1.4; }
 .schedule-option { display: flex; align-items: flex-start; gap: 9px; margin: 10px 2px 0; color: var(--ink); font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none; }
 .schedule-option input { width: 15px; height: 15px; flex: 0 0 15px; margin: 1px 0 0; accent-color: var(--coral-dark); }
 .schedule-option span, .schedule-option small { display: block; }
@@ -197,6 +225,11 @@ footer { display: flex; justify-content: space-between; padding: 20px 0 28px; bo
   .week-control { min-width: 0; }
   .question-head { align-items: flex-start; flex-direction: column; gap: 3px; }
   .question-grid { grid-template-columns: 1fr; }
+  .skyeng-connect-panel { padding: 16px; border-radius: 14px; }
+  .skyeng-connect-head strong { font-size: 16px; }
+  .skyeng-login-fields { grid-template-columns: 1fr; }
+  .skyeng-connect-actions { align-items: stretch; flex-direction: column-reverse; }
+  .skyeng-connect-actions button { width: 100%; }
   .task-list { min-width: 0; grid-template-columns: 1fr; }
   .task-row { grid-template-columns: 15px 92px minmax(0, 1fr) 48px 18px; }
   .ai-edit-row { align-items: stretch; flex-direction: column; }

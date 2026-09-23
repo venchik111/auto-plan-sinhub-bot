@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import hmac
 import re
 import sqlite3
-import sys
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -27,7 +25,14 @@ from .review.analyzer import ReviewAnalyzer
 from .review.queue import ReviewQueue
 from .review.service import ReviewService
 from .review.sheet import FreshmenSheetReader
-from .skyeng import SkyengAuthError, SkyengError, SkyengScheduleClient, render_schedule
+from .skyeng import (
+    SkyengAuthError,
+    SkyengError,
+    SkyengScheduleClient,
+    render_schedule,
+    save_skyeng_cookie_state,
+    save_skyeng_state,
+)
 from .sheets import SheetsError, SheetsRepository
 from .weeks import is_week_label, local_today, week_label, week_start as get_week_start
 
@@ -51,12 +56,6 @@ database = Database(settings.database_path)
 database.init()
 sheets = SheetsRepository.from_settings(settings)
 llm = OpenAICompatibleLLM(settings)
-
-# A browser session is the current account boundary for the local MVP. Each
-# session gets its own Skyeng storage state, so one user's account never leaks
-# into another user's schedule.
-skyeng_auth_processes: dict[str, asyncio.subprocess.Process] = {}
-skyeng_auth_errors: dict[str, str] = {}
 
 app = FastAPI(title="Авто-планирование", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
@@ -124,6 +123,13 @@ class ScheduleSyncRequest(BaseModel):
     week_start: date | None = None
 
 
+class SkyengConnectRequest(BaseModel):
+    login: str = Field(default="", max_length=200)
+    password: str = Field(default="", max_length=128)
+    cookies: str = Field(default="", max_length=30000)
+    week_start: date | None = None
+
+
 class CarryOverRequest(BaseModel):
     week_label: str = Field(min_length=5, max_length=30)
     week_start: date | None = None
@@ -155,23 +161,6 @@ def _skyeng_client(
     session_id: str, user: dict[str, Any] | None = None
 ) -> SkyengScheduleClient:
     return SkyengScheduleClient(_skyeng_storage_path(_account_storage_key(session_id, user)))
-
-
-async def _watch_skyeng_auth(
-    session_id: str, process: asyncio.subprocess.Process
-) -> None:
-    stdout, stderr = await process.communicate()
-    if process.returncode != 0:
-        output = (stderr or stdout).decode("utf-8", "replace").strip()
-        if "TargetClosedError" in output or "target, context or browser has been closed" in output:
-            message = "Окно входа Skyeng закрыли до завершения авторизации."
-        elif "executable doesn't exist" in output.lower():
-            message = "Не найден браузер для окна входа Skyeng."
-        else:
-            message = "Не удалось завершить подключение Skyeng. Попробуй ещё раз."
-        skyeng_auth_errors[session_id] = message
-    if skyeng_auth_processes.get(session_id) is process:
-        skyeng_auth_processes.pop(session_id, None)
 
 
 def _new_session_id() -> str:
@@ -325,7 +314,7 @@ async def _load_schedule(
             return {
                 "events": cached.get("events", []),
                 "fetched_at": cached.get("fetched_at"),
-                "connected": True,
+                "connected": False,
                 "stale": True,
                 "error": "Авторизация Skyeng устарела.",
             }
@@ -407,39 +396,41 @@ async def health() -> dict[str, str]:
 
 
 @app.post("/api/skyeng/connect")
-async def connect_skyeng(request: Request) -> dict[str, str | bool]:
+async def connect_skyeng(
+    request: Request, data: SkyengConnectRequest
+) -> dict[str, str | bool | int]:
     session_id, user = _require_user(request)
-    skyeng = _skyeng_client(session_id, user)
-    if skyeng.is_connected:
-        return {"connected": True, "status": "connected"}
-
-    existing = skyeng_auth_processes.get(session_id)
-    if existing and existing.returncode is None:
-        return {"connected": False, "status": "pending"}
-
-    skyeng_auth_errors.pop(session_id, None)
     target = _skyeng_storage_path(_account_storage_key(session_id, user))
-    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(f".{uuid.uuid4().hex}.tmp")
     try:
-        process = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-m",
-            "app.skyeng_login",
-            "--storage-state",
-            str(target),
-            "--auto",
-            cwd=str(BASE_DIR),
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        if data.login.strip() or data.password:
+            if not data.login.strip() or not data.password:
+                raise SkyengAuthError("Укажи логин или email и пароль Skyeng.")
+            state = await SkyengScheduleClient.login_with_password(
+                data.login, data.password
+            )
+            save_skyeng_state(temporary, state)
+        elif data.cookies.strip():
+            save_skyeng_cookie_state(temporary, data.cookies)
+        else:
+            raise SkyengAuthError("Укажи логин и пароль или вставь Cookie Skyeng.")
+        selected = data.week_start or local_today(settings.app_timezone)
+        start = selected - timedelta(days=selected.weekday())
+        events = await SkyengScheduleClient(temporary).fetch_week(
+            start, start + timedelta(days=6)
         )
-    except OSError as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Не удалось открыть окно входа Skyeng: {exc}"
-        ) from exc
-    skyeng_auth_processes[session_id] = process
-    asyncio.create_task(_watch_skyeng_auth(session_id, process))
-    return {"connected": False, "status": "pending"}
+        temporary.replace(target)
+    except SkyengAuthError as exc:
+        temporary.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (OSError, SkyengError) as exc:
+        temporary.unlink(missing_ok=True)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        "connected": True,
+        "status": "connected",
+        "events": len(events),
+    }
 
 
 @app.get("/api/skyeng/status")
@@ -448,13 +439,7 @@ async def skyeng_status(request: Request) -> dict[str, str | bool]:
     skyeng = _skyeng_client(session_id, user)
     if skyeng.is_connected:
         return {"connected": True, "status": "connected"}
-    if session_id in skyeng_auth_processes:
-        return {"connected": False, "status": "pending"}
-    return {
-        "connected": False,
-        "status": "failed" if session_id in skyeng_auth_errors else "idle",
-        "error": skyeng_auth_errors.get(session_id, ""),
-    }
+    return {"connected": False, "status": "idle", "error": ""}
 
 
 @app.get("/api/bootstrap")
